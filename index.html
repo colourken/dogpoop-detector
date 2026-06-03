@@ -59,6 +59,17 @@
     .badge.warn span { color: #fa0; }
     .badge.err  span { color: #f44; }
 
+    #model-select {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #5bf;
+      font-size: 0.68rem;
+      padding: 1px 4px;
+      cursor: pointer;
+      outline: none;
+    }
+
     #viewport {
       position: relative;
       width: 100%;
@@ -145,7 +156,14 @@
     <div class="badge" id="b-fps">FPS <span id="v-fps">—</span></div>
     <div class="badge" id="b-backend">Backend <span id="v-backend">—</span></div>
     <div class="badge">imgsz <span>320</span></div>
-    <div class="badge" id="b-model">Model <span id="v-model">—</span></div>
+    <div class="badge">
+      Model
+      <select id="model-select">
+        <option value="v6">v6</option>
+        <option value="v7" selected>v7</option>
+      </select>
+    </div>
+    <div class="badge" id="b-model">Active <span id="v-model">—</span></div>
     <div class="badge" id="b-device">Device <span id="v-device">—</span></div>
     <div class="badge" id="b-browser">Browser <span id="v-browser">—</span></div>
   </div>
@@ -162,11 +180,17 @@
   <div id="det-count" style="display:none">偵測中…</div>
 </div>
 
-<footer>DogPoopAI v6 · YOLOv8n · 1-class (poop)</footer>
+<footer>DogPoopAI v6/v7 · YOLOv8n · 1-class (poop)</footer>
 
 <script>
 // ─── Config ───────────────────────────────────────────────────────────────────
-const MODEL_URL   = './DogPoopAI_v6_320.onnx';
+const MODELS = {
+  v6: { url: './DogPoopAI_v6_320.onnx', label: 'v6' },
+  v7: { url: './DogPoopAI_v7_320.onnx', label: 'v7' },
+};
+let currentModelKey = 'v7';
+let currentModelUrl = MODELS[currentModelKey].url;
+
 const IMGSZ       = 320;
 const CONF_THRESH = 0.30;
 const NMS_IOU     = 0.45;
@@ -179,6 +203,7 @@ const overlayEl = document.getElementById('overlay-msg');
 const msgText   = document.getElementById('msg-text');
 const startBtn  = document.getElementById('start-btn');
 const detCount  = document.getElementById('det-count');
+const modelSel  = document.getElementById('model-select');
 const vFps      = document.getElementById('v-fps');
 const vBackend  = document.getElementById('v-backend');
 const vModel    = document.getElementById('v-model');
@@ -230,7 +255,9 @@ let session = null;
 
 async function initModel() {
   setMsg('載入 ONNX Runtime…');
-  await loadScript(ORT_CDN + 'ort.all.min.js');
+  if (typeof ort === 'undefined') {
+    await loadScript(ORT_CDN + 'ort.all.min.js');
+  }
 
   // Always use single-threaded WASM — avoids crossOriginIsolated requirement
   // (GitHub Pages cannot set COOP/COEP headers; multi-thread needs SharedArrayBuffer)
@@ -245,7 +272,7 @@ async function initModel() {
         console.info('[webgpu] navigator.gpu not available, skipping');
         continue;
       }
-      session = await ort.InferenceSession.create(MODEL_URL, {
+      session = await ort.InferenceSession.create(currentModelUrl, {
         executionProviders: [ep],
         graphOptimizationLevel: 'all',
       });
@@ -261,8 +288,9 @@ async function initModel() {
 
   if (!session) throw new Error('無法載入模型，請使用 Chrome 或 Safari 並允許相機權限。');
 
-  vModel.textContent = 'loaded';
+  vModel.textContent = MODELS[currentModelKey].label;
   bModel.className = 'badge good';
+  console.log('[ModelLoaded]', currentModelKey, currentModelUrl);
 
   // Warm-up
   setMsg('模型暖機中…');
@@ -409,11 +437,60 @@ async function inferLoop() {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function setMsg(t) { msgText.textContent = t; }
 
+// ─── Model switching ─────────────────────────────────────────────────────────
+async function loadSelectedModel() {
+  if (!running) {
+    currentModelKey = modelSel.value;
+    currentModelUrl = MODELS[currentModelKey].url;
+    vModel.textContent = MODELS[currentModelKey].label;
+    return;
+  }
+
+  running = false;
+  modelSel.disabled = true;
+  setMsg(`切換模型到 ${MODELS[modelSel.value].label}...`);
+
+  currentModelKey = modelSel.value;
+  currentModelUrl = MODELS[currentModelKey].url;
+
+  try {
+    if (session && typeof session.release === 'function') {
+      await session.release();
+    }
+  } catch (e) {
+    console.warn('[ModelSwitch] session release warning:', e);
+  }
+
+  session = null;
+
+  try {
+    await initModel();
+    overlayEl.style.display = 'none';
+    detCount.style.display = 'block';
+    running = true;
+    console.log('[ModelSwitch]', currentModelKey, currentModelUrl);
+    inferLoop();
+  } catch (e) {
+    console.error(e);
+    setMsg(`❌ 模型切換失敗: ${e.message}`);
+    vModel.textContent = 'error';
+    bModel.className = 'badge err';
+    startBtn.disabled = false;
+    startBtn.textContent = '重試';
+  } finally {
+    modelSel.disabled = false;
+  }
+}
+
+modelSel.addEventListener('change', loadSelectedModel);
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 startBtn.addEventListener('click', async () => {
   startBtn.disabled = true;
   startBtn.textContent = '載入中…';
   try {
+    currentModelKey = modelSel.value;
+    currentModelUrl = MODELS[currentModelKey].url;
     await startCamera();
     await initModel();
     overlayEl.style.display = 'none';

@@ -3,6 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="application-name" content="DogPoopAI" />
+  <meta name="author" content="Samlyn Robotics Ltd." />
+  <meta name="copyright" content="© 2026 Samlyn Robotics Ltd. All rights reserved." />
+  <meta name="build" content="v7-letterbox-2026-06-03" />
+  <meta name="rights" content="Unauthorized copying, redistribution, or commercial use is prohibited." />
   <title>💩 Dog Poop AI Detector</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -145,6 +150,17 @@
       font-size: 0.65rem;
       color: #444;
       text-align: center;
+      line-height: 1.45;
+      padding: 0 16px;
+    }
+
+    footer strong {
+      color: #777;
+      font-weight: 600;
+    }
+
+    footer .rights {
+      color: #555;
     }
   </style>
 </head>
@@ -156,6 +172,7 @@
     <div class="badge" id="b-fps">FPS <span id="v-fps">—</span></div>
     <div class="badge" id="b-backend">Backend <span id="v-backend">—</span></div>
     <div class="badge">imgsz <span>320</span></div>
+    <div class="badge">Build <span>v7-letterbox</span></div>
     <div class="badge">
       Model
       <select id="model-select">
@@ -180,7 +197,11 @@
   <div id="det-count" style="display:none">偵測中…</div>
 </div>
 
-<footer>DogPoopAI v6/v7 · YOLOv8n · 1-class (poop)</footer>
+<footer>
+  <div><strong>DogPoopAI</strong> · v6/v7 · YOLOv8n · 1-class (poop) · Build v7-letterbox-2026-06-03</div>
+  <div>© 2026 Samlyn Robotics Ltd. All rights reserved.</div>
+  <div class="rights">Unauthorized copying, redistribution, or commercial use is prohibited.</div>
+</footer>
 
 <script>
 // ─── Config ───────────────────────────────────────────────────────────────────

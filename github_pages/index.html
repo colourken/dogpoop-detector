@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>💩 Dog Poop AI Detector</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0a;
+      color: #e0e0e0;
+      font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      width: 100%;
+      padding: 12px 16px 8px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid #222;
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #fff;
+    }
+
+    #status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 8px 0;
+      font-size: 0.68rem;
+    }
+
+    .badge {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 2px 8px;
+      color: #aaa;
+      white-space: nowrap;
+    }
+
+    .badge span { color: #5bf; }
+    .badge.good span { color: #4c4; }
+    .badge.warn span { color: #fa0; }
+    .badge.err  span { color: #f44; }
+
+    #viewport {
+      position: relative;
+      width: 100%;
+      max-width: 600px;
+      margin-top: 12px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #111;
+      aspect-ratio: 4/3;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    #canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    #overlay-msg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: rgba(0,0,0,0.75);
+      font-size: 0.9rem;
+      color: #ccc;
+      text-align: center;
+      padding: 20px;
+    }
+
+    #overlay-msg .icon { font-size: 2.5rem; }
+
+    #start-btn {
+      background: linear-gradient(135deg, #55bbff, #338899);
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 12px 32px;
+      cursor: pointer;
+      margin-top: 8px;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #start-btn:active { opacity: 0.8; }
+    #start-btn:disabled { opacity: 0.5; cursor: default; }
+
+    #det-count {
+      position: absolute;
+      bottom: 10px;
+      right: 12px;
+      background: rgba(0,0,0,0.55);
+      border-radius: 8px;
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      color: #eee;
+    }
+
+    footer {
+      margin: 16px 0 24px;
+      font-size: 0.65rem;
+      color: #444;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>💩 Dog Poop AI Detector</h1>
+  <div id="status-bar">
+    <div class="badge" id="b-fps">FPS <span id="v-fps">—</span></div>
+    <div class="badge" id="b-backend">Backend <span id="v-backend">—</span></div>
+    <div class="badge">imgsz <span>320</span></div>
+    <div class="badge" id="b-model">Model <span id="v-model">—</span></div>
+    <div class="badge" id="b-device">Device <span id="v-device">—</span></div>
+    <div class="badge" id="b-browser">Browser <span id="v-browser">—</span></div>
+  </div>
+</header>
+
+<div id="viewport">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="overlay-msg">
+    <div class="icon">📷</div>
+    <div id="msg-text">點擊開始，開啟相機並載入 AI 模型</div>
+    <button id="start-btn">開始偵測</button>
+  </div>
+  <div id="det-count" style="display:none">偵測中…</div>
+</div>
+
+<footer>DogPoopAI v6 · YOLOv8n · 1-class (poop)</footer>
+
+<script>
+// ─── Config ───────────────────────────────────────────────────────────────────
+const MODEL_URL   = './DogPoopAI_v6_320.onnx';
+const IMGSZ       = 320;
+const CONF_THRESH = 0.30;
+const NMS_IOU     = 0.45;
+
+// ─── UI refs ─────────────────────────────────────────────────────────────────
+const video     = document.getElementById('video');
+const canvas    = document.getElementById('canvas');
+const ctx       = canvas.getContext('2d');
+const overlayEl = document.getElementById('overlay-msg');
+const msgText   = document.getElementById('msg-text');
+const startBtn  = document.getElementById('start-btn');
+const detCount  = document.getElementById('det-count');
+const vFps      = document.getElementById('v-fps');
+const vBackend  = document.getElementById('v-backend');
+const vModel    = document.getElementById('v-model');
+const vDevice   = document.getElementById('v-device');
+const vBrowser  = document.getElementById('v-browser');
+const bBackend  = document.getElementById('b-backend');
+const bModel    = document.getElementById('b-model');
+const bFps      = document.getElementById('b-fps');
+
+// ─── Device / Browser detection ──────────────────────────────────────────────
+(function detectEnv() {
+  const ua = navigator.userAgent;
+  let device = 'Desktop';
+  if (/iPhone/.test(ua))       device = 'iPhone';
+  else if (/iPad/.test(ua))    device = 'iPad';
+  else if (/Android/.test(ua)) {
+    const m = ua.match(/;\s*([^;)]+)\sBuild/);
+    device = m ? m[1].trim() : 'Android';
+  }
+
+  let browser = 'Browser';
+  if (/CriOS/.test(ua))                           browser = 'Chrome iOS';
+  else if (/FxiOS/.test(ua))                      browser = 'Firefox iOS';
+  else if (/EdgiOS/.test(ua))                     browser = 'Edge iOS';
+  else if (/Chrome\//.test(ua))                   browser = 'Chrome';
+  else if (/Firefox\//.test(ua))                  browser = 'Firefox';
+  else if (/Edg\//.test(ua))                      browser = 'Edge';
+  else if (/Safari\//.test(ua) && /Version\//.test(ua)) browser = 'Safari';
+
+  vDevice.textContent  = device;
+  vBrowser.textContent = browser;
+})();
+
+// ─── Load ONNX Runtime from CDN ───────────────────────────────────────────────
+// v1.21.0: fixes WebGPU adapter.requestAdapterInfo → adapter.info (Chrome 121+)
+const ORT_VERSION = '1.21.0';
+const ORT_CDN     = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+// ─── Model init (WebGPU → WASM fallback) ─────────────────────────────────────
+let session = null;
+
+async function initModel() {
+  setMsg('載入 ONNX Runtime…');
+  await loadScript(ORT_CDN + 'ort.all.min.js');
+
+  // Always use single-threaded WASM — avoids crossOriginIsolated requirement
+  // (GitHub Pages cannot set COOP/COEP headers; multi-thread needs SharedArrayBuffer)
+  ort.env.wasm.numThreads = 1;
+  ort.env.wasm.wasmPaths  = ORT_CDN;
+
+  for (const ep of ['webgpu', 'wasm']) {
+    try {
+      setMsg(`嘗試 ${ep.toUpperCase()} 後端…`);
+      // WebGPU: check support before trying (avoids cryptic errors on unsupported browsers)
+      if (ep === 'webgpu' && !navigator.gpu) {
+        console.info('[webgpu] navigator.gpu not available, skipping');
+        continue;
+      }
+      session = await ort.InferenceSession.create(MODEL_URL, {
+        executionProviders: [ep],
+        graphOptimizationLevel: 'all',
+      });
+      const label = ep.toUpperCase();
+      vBackend.textContent = label;
+      bBackend.className = `badge ${ep === 'webgpu' ? 'good' : 'warn'}`;
+      break;
+    } catch(e) {
+      console.warn(`[${ep}] failed:`, e.message);
+      session = null;
+    }
+  }
+
+  if (!session) throw new Error('無法載入模型，請使用 Chrome 或 Safari 並允許相機權限。');
+
+  vModel.textContent = 'loaded';
+  bModel.className = 'badge good';
+
+  // Warm-up
+  setMsg('模型暖機中…');
+  const dummy = new ort.Tensor('float32', new Float32Array(1 * 3 * IMGSZ * IMGSZ), [1, 3, IMGSZ, IMGSZ]);
+  await session.run({ images: dummy });
+}
+
+// ─── Camera ──────────────────────────────────────────────────────────────────
+async function startCamera() {
+  setMsg('請求相機權限…');
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false,
+  });
+  video.srcObject = stream;
+  await new Promise(r => { video.onloadedmetadata = r; });
+  await video.play();
+}
+
+// ─── Preprocessing ────────────────────────────────────────────────────────────
+const offscreen = document.createElement('canvas');
+offscreen.width = offscreen.height = IMGSZ;
+const offCtx = offscreen.getContext('2d', { willReadFrequently: true });
+
+function preprocess() {
+  offCtx.drawImage(video, 0, 0, IMGSZ, IMGSZ);
+  const { data } = offCtx.getImageData(0, 0, IMGSZ, IMGSZ);
+  const n = IMGSZ * IMGSZ;
+  const f = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) {
+    f[i]         = data[i * 4]     / 255;
+    f[n + i]     = data[i * 4 + 1] / 255;
+    f[2 * n + i] = data[i * 4 + 2] / 255;
+  }
+  return new ort.Tensor('float32', f, [1, 3, IMGSZ, IMGSZ]);
+}
+
+// ─── Postprocessing ───────────────────────────────────────────────────────────
+// Output shape: [1, 5, 2100]  →  rows = x_c, y_c, w, h, conf  (coords in 0..IMGSZ)
+function postprocess(tensor, vw, vh) {
+  const d = tensor.data;
+  const N = tensor.dims[2]; // 2100
+  const raw = [];
+
+  for (let i = 0; i < N; i++) {
+    const conf = d[4 * N + i];
+    if (conf < CONF_THRESH) continue;
+    const xc = d[0 * N + i] / IMGSZ;
+    const yc = d[1 * N + i] / IMGSZ;
+    const bw = d[2 * N + i] / IMGSZ;
+    const bh = d[3 * N + i] / IMGSZ;
+    raw.push({
+      x1: Math.max(0, xc - bw / 2),
+      y1: Math.max(0, yc - bh / 2),
+      x2: Math.min(1, xc + bw / 2),
+      y2: Math.min(1, yc + bh / 2),
+      conf,
+    });
+  }
+
+  raw.sort((a, b) => b.conf - a.conf);
+  const kept = [], used = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) {
+    if (used[i]) continue;
+    kept.push(raw[i]);
+    for (let j = i + 1; j < raw.length; j++)
+      if (!used[j] && iou(raw[i], raw[j]) > NMS_IOU) used[j] = 1;
+  }
+
+  return kept.map(b => ({
+    x: b.x1 * vw, y: b.y1 * vh,
+    w: (b.x2 - b.x1) * vw,
+    h: (b.y2 - b.y1) * vh,
+    conf: b.conf,
+  }));
+}
+
+function iou(a, b) {
+  const ix1 = Math.max(a.x1, b.x1), iy1 = Math.max(a.y1, b.y1);
+  const ix2 = Math.min(a.x2, b.x2), iy2 = Math.min(a.y2, b.y2);
+  const inter = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
+  if (!inter) return 0;
+  return inter / ((a.x2-a.x1)*(a.y2-a.y1) + (b.x2-b.x1)*(b.y2-b.y1) - inter);
+}
+
+// ─── Draw ─────────────────────────────────────────────────────────────────────
+function draw(dets, vw, vh) {
+  canvas.width  = vw;
+  canvas.height = vh;
+  ctx.clearRect(0, 0, vw, vh);
+  const lw = Math.max(2, vw / 180);
+  const fs = Math.max(13, vw / 26);
+
+  for (const d of dets) {
+    ctx.strokeStyle = '#ff3333';
+    ctx.lineWidth   = lw;
+    ctx.strokeRect(d.x, d.y, d.w, d.h);
+
+    const label = `💩 ${(d.conf * 100).toFixed(0)}%`;
+    ctx.font = `bold ${fs}px sans-serif`;
+    const tw  = ctx.measureText(label).width;
+    const pad = 4;
+    const lx  = d.x;
+    const ly  = d.y - fs - pad * 2 > 0 ? d.y - fs - pad * 2 : d.y + 2;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(lx, ly, tw + pad * 2, fs + pad * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, lx + pad, ly + fs + pad * 0.6);
+  }
+}
+
+// ─── Inference loop ───────────────────────────────────────────────────────────
+let running = false, frameCount = 0, lastTs = performance.now();
+
+async function inferLoop() {
+  if (!running) return;
+
+  const t = preprocess();
+  const out = await session.run({ images: t });
+  const outTensor = out[Object.keys(out)[0]];
+
+  const vw = video.videoWidth  || 320;
+  const vh = video.videoHeight || 240;
+  const dets = postprocess(outTensor, vw, vh);
+  draw(dets, vw, vh);
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastTs >= 1000) {
+    const fps = Math.round(frameCount * 1000 / (now - lastTs));
+    vFps.textContent = fps;
+    bFps.className = `badge ${fps >= 15 ? 'good' : fps >= 7 ? 'warn' : 'err'}`;
+    frameCount = 0; lastTs = now;
+  }
+
+  detCount.textContent = dets.length
+    ? `💩 偵測到 ${dets.length} 個`
+    : '未偵測到便便';
+
+  requestAnimationFrame(inferLoop);
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function setMsg(t) { msgText.textContent = t; }
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+startBtn.addEventListener('click', async () => {
+  startBtn.disabled = true;
+  startBtn.textContent = '載入中…';
+  try {
+    await startCamera();
+    await initModel();
+    overlayEl.style.display = 'none';
+    detCount.style.display  = 'block';
+    running = true;
+    inferLoop();
+  } catch (e) {
+    console.error(e);
+    setMsg(`❌ ${e.message}`);
+    vModel.textContent = 'error';
+    bModel.className = 'badge err';
+    startBtn.disabled = false;
+    startBtn.textContent = '重試';
+  }
+});
+</script>
+</body>
+</html>

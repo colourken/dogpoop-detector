@@ -323,9 +323,28 @@ async function startCamera() {
 const offscreen = document.createElement('canvas');
 offscreen.width = offscreen.height = IMGSZ;
 const offCtx = offscreen.getContext('2d', { willReadFrequently: true });
+let lastPreprocess = {
+  scale: 1,
+  padX: 0,
+  padY: 0,
+  srcW: IMGSZ,
+  srcH: IMGSZ,
+};
 
 function preprocess() {
-  offCtx.drawImage(video, 0, 0, IMGSZ, IMGSZ);
+  const srcW = video.videoWidth || IMGSZ;
+  const srcH = video.videoHeight || IMGSZ;
+  const scale = Math.min(IMGSZ / srcW, IMGSZ / srcH);
+  const drawW = srcW * scale;
+  const drawH = srcH * scale;
+  const padX = (IMGSZ - drawW) / 2;
+  const padY = (IMGSZ - drawH) / 2;
+
+  offCtx.fillStyle = 'rgb(114,114,114)';
+  offCtx.fillRect(0, 0, IMGSZ, IMGSZ);
+  offCtx.drawImage(video, 0, 0, srcW, srcH, padX, padY, drawW, drawH);
+  lastPreprocess = { scale, padX, padY, srcW, srcH };
+
   const { data } = offCtx.getImageData(0, 0, IMGSZ, IMGSZ);
   const n = IMGSZ * IMGSZ;
   const f = new Float32Array(3 * n);
@@ -339,23 +358,29 @@ function preprocess() {
 
 // ─── Postprocessing ───────────────────────────────────────────────────────────
 // Output shape: [1, 5, 2100]  →  rows = x_c, y_c, w, h, conf  (coords in 0..IMGSZ)
-function postprocess(tensor, vw, vh) {
+function postprocess(tensor, prep) {
   const d = tensor.data;
   const N = tensor.dims[2]; // 2100
   const raw = [];
+  const { scale, padX, padY, srcW, srcH } = prep;
 
   for (let i = 0; i < N; i++) {
     const conf = d[4 * N + i];
     if (conf < CONF_THRESH) continue;
-    const xc = d[0 * N + i] / IMGSZ;
-    const yc = d[1 * N + i] / IMGSZ;
-    const bw = d[2 * N + i] / IMGSZ;
-    const bh = d[3 * N + i] / IMGSZ;
+    const xc = d[0 * N + i];
+    const yc = d[1 * N + i];
+    const bw = d[2 * N + i];
+    const bh = d[3 * N + i];
+    const x1 = Math.max(0, (xc - bw / 2 - padX) / scale);
+    const y1 = Math.max(0, (yc - bh / 2 - padY) / scale);
+    const x2 = Math.min(srcW, (xc + bw / 2 - padX) / scale);
+    const y2 = Math.min(srcH, (yc + bh / 2 - padY) / scale);
+    if (x2 <= x1 || y2 <= y1) continue;
     raw.push({
-      x1: Math.max(0, xc - bw / 2),
-      y1: Math.max(0, yc - bh / 2),
-      x2: Math.min(1, xc + bw / 2),
-      y2: Math.min(1, yc + bh / 2),
+      x1: x1 / srcW,
+      y1: y1 / srcH,
+      x2: x2 / srcW,
+      y2: y2 / srcH,
       conf,
     });
   }
@@ -370,9 +395,9 @@ function postprocess(tensor, vw, vh) {
   }
 
   return kept.map(b => ({
-    x: b.x1 * vw, y: b.y1 * vh,
-    w: (b.x2 - b.x1) * vw,
-    h: (b.y2 - b.y1) * vh,
+    x: b.x1 * srcW, y: b.y1 * srcH,
+    w: (b.x2 - b.x1) * srcW,
+    h: (b.y2 - b.y1) * srcH,
     conf: b.conf,
   }));
 }
@@ -523,7 +548,7 @@ function draw(dets, displayBox, xf, rawConf) {
 }
 
 // ─── Inference loop ───────────────────────────────────────────────────────────
-let running = false, frameCount = 0, lastTs = performance.now();
+let running = false, frameCount = 0, lastTs = performance.now(), inferenceRunId = 0;
 
 let smoothedConf = 0;
 let visible = false;
@@ -532,16 +557,34 @@ let boxHistory = [];
 let lastSmoothBox = null;
 let lastSmoothBoxTs = 0;
 
-async function inferLoop() {
-  if (!running) return;
+function stopInference() {
+  running = false;
+  inferenceRunId++;
+}
 
+function startInference() {
+  running = true;
+  inferLoop(++inferenceRunId);
+}
+
+async function inferLoop(runId) {
+  if (!running || runId !== inferenceRunId || !session) return;
+
+  const activeSession = session;
   const t = preprocess();
-  const out = await session.run({ images: t });
+  const prep = { ...lastPreprocess };
+  let out;
+  try {
+    out = await activeSession.run({ images: t });
+  } catch (e) {
+    if (!running || runId !== inferenceRunId) return;
+    throw e;
+  }
+
+  if (!running || runId !== inferenceRunId || activeSession !== session) return;
   const outTensor = out[Object.keys(out)[0]];
 
-  const vw = video.videoWidth  || 320;
-  const vh = video.videoHeight || 240;
-  const dets = postprocess(outTensor, vw, vh);
+  const dets = postprocess(outTensor, prep);
   const xf = getDisplayTransform();
   const { rawConf, displayBox } = updateDisplayStability(dets);
   draw(dets, displayBox, xf, rawConf);
@@ -559,7 +602,7 @@ async function inferLoop() {
     ? `💩 目標穩定中 ${(smoothedConf * 100).toFixed(0)}%`
     : '未偵測到便便';
 
-  requestAnimationFrame(inferLoop);
+  requestAnimationFrame(() => inferLoop(runId));
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -574,7 +617,7 @@ async function loadSelectedModel() {
     return;
   }
 
-  running = false;
+  stopInference();
   resetDisplayStability();
   modelSel.disabled = true;
   setMsg(`切換模型到 ${MODELS[modelSel.value].label}...`);
@@ -596,9 +639,8 @@ async function loadSelectedModel() {
     await initModel();
     overlayEl.style.display = 'none';
     detCount.style.display = 'block';
-    running = true;
+    startInference();
     console.log('[ModelSwitch]', currentModelKey, currentModelUrl);
-    inferLoop();
   } catch (e) {
     console.error(e);
     setMsg(`❌ 模型切換失敗: ${e.message}`);
@@ -625,8 +667,7 @@ startBtn.addEventListener('click', async () => {
     overlayEl.style.display = 'none';
     detCount.style.display  = 'block';
     resetDisplayStability();
-    running = true;
-    inferLoop();
+    startInference();
   } catch (e) {
     console.error(e);
     setMsg(`❌ ${e.message}`);

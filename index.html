@@ -195,6 +195,15 @@ const IMGSZ       = 320;
 const CONF_THRESH = 0.30;
 const NMS_IOU     = 0.45;
 
+// ─── Display stability / anti-flicker ───────────────────────────────────────
+const DEBUG_RAW_BOXES = false;   // true = show raw per-frame detections
+const EMA_ALPHA       = 0.30;    // confidence smoothing
+const APPEAR_THRESH   = 0.50;    // show box when smoothed confidence reaches this
+const DISAPPEAR_THRESH= 0.35;    // hide box only after confidence drops below this
+const BOX_SMOOTH_N    = 5;       // moving average frames for box position
+const LOST_FRAMES     = 8;       // clear memory only after this many missing frames
+const MEMORY_MS       = 450;     // keep last box briefly during missed detections
+
 // ─── UI refs ─────────────────────────────────────────────────────────────────
 const video     = document.getElementById('video');
 const canvas    = document.getElementById('canvas');
@@ -376,25 +385,135 @@ function iou(a, b) {
   return inter / ((a.x2-a.x1)*(a.y2-a.y1) + (b.x2-b.x1)*(b.y2-b.y1) - inter);
 }
 
+
+// ─── Display transform / box smoothing ───────────────────────────────────────
+function getDisplayTransform() {
+  const rect = video.getBoundingClientRect();
+  const displayWidth = rect.width || 320;
+  const displayHeight = rect.height || 240;
+  const videoWidth = video.videoWidth || 320;
+  const videoHeight = video.videoHeight || 240;
+  const dpr = window.devicePixelRatio || 1;
+
+  const scale = Math.max(displayWidth / videoWidth, displayHeight / videoHeight);
+  const scaledW = videoWidth * scale;
+  const scaledH = videoHeight * scale;
+  const offsetX = (scaledW - displayWidth) / 2;
+  const offsetY = (scaledH - displayHeight) / 2;
+
+  return { displayWidth, displayHeight, videoWidth, videoHeight, scale, offsetX, offsetY, dpr };
+}
+
+function mapVideoToDisplay(x, y, xf) {
+  return [
+    x * xf.scale - xf.offsetX,
+    y * xf.scale - xf.offsetY,
+  ];
+}
+
+function updateDisplayStability(dets) {
+  const best = dets.length ? dets[0] : null;
+  const rawConf = best ? best.conf : 0;
+
+  smoothedConf = (1 - EMA_ALPHA) * smoothedConf + EMA_ALPHA * rawConf;
+
+  if (!visible && smoothedConf >= APPEAR_THRESH) visible = true;
+  if ( visible && smoothedConf <  DISAPPEAR_THRESH) visible = false;
+
+  if (best && visible) {
+    missingFrames = 0;
+    boxHistory.push({
+      x: best.x,
+      y: best.y,
+      w: best.w,
+      h: best.h,
+      conf: best.conf
+    });
+    if (boxHistory.length > BOX_SMOOTH_N) boxHistory.shift();
+  } else {
+    missingFrames++;
+    if (missingFrames >= LOST_FRAMES) {
+      boxHistory = [];
+      lastSmoothBox = null;
+    }
+  }
+
+  let smoothBox = null;
+  if (boxHistory.length) {
+    let x = 0, y = 0, w = 0, h = 0, conf = 0;
+    for (const b of boxHistory) {
+      x += b.x; y += b.y; w += b.w; h += b.h; conf += b.conf;
+    }
+    const n = boxHistory.length;
+    smoothBox = { x: x/n, y: y/n, w: w/n, h: h/n, conf: conf/n };
+    lastSmoothBox = smoothBox;
+    lastSmoothBoxTs = performance.now();
+  }
+
+  const now = performance.now();
+  const memoryActive = lastSmoothBox && (now - lastSmoothBoxTs <= MEMORY_MS);
+  const displayBox = smoothBox || (memoryActive ? lastSmoothBox : null);
+
+  return { rawConf, displayBox, memoryActive };
+}
+
+function resetDisplayStability() {
+  smoothedConf = 0;
+  visible = false;
+  missingFrames = 0;
+  boxHistory = [];
+  lastSmoothBox = null;
+  lastSmoothBoxTs = 0;
+}
+
 // ─── Draw ─────────────────────────────────────────────────────────────────────
-function draw(dets, vw, vh) {
-  canvas.width  = vw;
-  canvas.height = vh;
-  ctx.clearRect(0, 0, vw, vh);
-  const lw = Math.max(2, vw / 180);
-  const fs = Math.max(13, vw / 26);
+function draw(dets, displayBox, xf, rawConf) {
+  const { displayWidth: dw, displayHeight: dh, dpr } = xf;
 
-  for (const d of dets) {
-    ctx.strokeStyle = '#ff3333';
-    ctx.lineWidth   = lw;
-    ctx.strokeRect(d.x, d.y, d.w, d.h);
+  canvas.width  = Math.round(dw * dpr);
+  canvas.height = Math.round(dh * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, dw, dh);
 
-    const label = `💩 ${(d.conf * 100).toFixed(0)}%`;
+  const lw = Math.max(2, dw / 180);
+  const fs = Math.max(13, dw / 26);
+
+  function toDisplayRect(d) {
+    const [x, y] = mapVideoToDisplay(d.x, d.y, xf);
+    return {
+      x,
+      y,
+      w: d.w * xf.scale,
+      h: d.h * xf.scale,
+      conf: d.conf
+    };
+  }
+
+  // Raw detections only for debugging. Keeping them visible causes flicker.
+  if (DEBUG_RAW_BOXES) {
+    for (const d of dets) {
+      const r = toDisplayRect(d);
+      ctx.strokeStyle = 'rgba(255,80,80,0.35)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+    }
+  }
+
+  if (displayBox) {
+    const r = toDisplayRect(displayBox);
+    const locked = visible && smoothedConf >= APPEAR_THRESH;
+    const color = locked ? '#ff3333' : 'rgba(255,170,0,0.65)';
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = locked ? lw : Math.max(1.5, lw * 0.75);
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+
+    const label = `💩 ${(smoothedConf * 100).toFixed(0)}%`;
     ctx.font = `bold ${fs}px sans-serif`;
     const tw  = ctx.measureText(label).width;
     const pad = 4;
-    const lx  = d.x;
-    const ly  = d.y - fs - pad * 2 > 0 ? d.y - fs - pad * 2 : d.y + 2;
+    const lx  = r.x;
+    const ly  = r.y - fs - pad * 2 > 0 ? r.y - fs - pad * 2 : r.y + 2;
 
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(lx, ly, tw + pad * 2, fs + pad * 2);
@@ -406,6 +525,13 @@ function draw(dets, vw, vh) {
 // ─── Inference loop ───────────────────────────────────────────────────────────
 let running = false, frameCount = 0, lastTs = performance.now();
 
+let smoothedConf = 0;
+let visible = false;
+let missingFrames = 0;
+let boxHistory = [];
+let lastSmoothBox = null;
+let lastSmoothBoxTs = 0;
+
 async function inferLoop() {
   if (!running) return;
 
@@ -416,7 +542,9 @@ async function inferLoop() {
   const vw = video.videoWidth  || 320;
   const vh = video.videoHeight || 240;
   const dets = postprocess(outTensor, vw, vh);
-  draw(dets, vw, vh);
+  const xf = getDisplayTransform();
+  const { rawConf, displayBox } = updateDisplayStability(dets);
+  draw(dets, displayBox, xf, rawConf);
 
   frameCount++;
   const now = performance.now();
@@ -427,8 +555,8 @@ async function inferLoop() {
     frameCount = 0; lastTs = now;
   }
 
-  detCount.textContent = dets.length
-    ? `💩 偵測到 ${dets.length} 個`
+  detCount.textContent = displayBox
+    ? `💩 目標穩定中 ${(smoothedConf * 100).toFixed(0)}%`
     : '未偵測到便便';
 
   requestAnimationFrame(inferLoop);
@@ -447,6 +575,7 @@ async function loadSelectedModel() {
   }
 
   running = false;
+  resetDisplayStability();
   modelSel.disabled = true;
   setMsg(`切換模型到 ${MODELS[modelSel.value].label}...`);
 
@@ -495,6 +624,7 @@ startBtn.addEventListener('click', async () => {
     await initModel();
     overlayEl.style.display = 'none';
     detCount.style.display  = 'block';
+    resetDisplayStability();
     running = true;
     inferLoop();
   } catch (e) {

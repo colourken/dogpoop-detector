@@ -331,6 +331,11 @@ async function initModel() {
 // ─── Camera ──────────────────────────────────────────────────────────────────
 async function startCamera() {
   setMsg('請求相機權限…');
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(track => track.stop());
+    video.srcObject = null;
+  }
+
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
     audio: false,
@@ -466,16 +471,22 @@ function updateDisplayStability(dets) {
   if (!visible && smoothedConf >= APPEAR_THRESH) visible = true;
   if ( visible && smoothedConf <  DISAPPEAR_THRESH) visible = false;
 
-  if (best && visible) {
+  if (best) {
     missingFrames = 0;
-    boxHistory.push({
-      x: best.x,
-      y: best.y,
-      w: best.w,
-      h: best.h,
-      conf: best.conf
-    });
-    if (boxHistory.length > BOX_SMOOTH_N) boxHistory.shift();
+
+    if (visible) {
+      boxHistory.push({
+        x: best.x,
+        y: best.y,
+        w: best.w,
+        h: best.h,
+        conf: best.conf
+      });
+      if (boxHistory.length > BOX_SMOOTH_N) boxHistory.shift();
+    } else if (smoothedConf < DISAPPEAR_THRESH) {
+      boxHistory = [];
+      lastSmoothBox = null;
+    }
   } else {
     missingFrames++;
     if (missingFrames >= LOST_FRAMES) {
@@ -500,7 +511,7 @@ function updateDisplayStability(dets) {
   const memoryActive = lastSmoothBox && (now - lastSmoothBoxTs <= MEMORY_MS);
   const displayBox = smoothBox || (memoryActive ? lastSmoothBox : null);
 
-  return { rawConf, displayBox, memoryActive };
+  return { displayBox };
 }
 
 function resetDisplayStability() {
@@ -513,7 +524,7 @@ function resetDisplayStability() {
 }
 
 // ─── Draw ─────────────────────────────────────────────────────────────────────
-function draw(dets, displayBox, xf, rawConf) {
+function draw(dets, displayBox, xf) {
   const { displayWidth: dw, displayHeight: dh, dpr } = xf;
 
   canvas.width  = Math.round(dw * dpr);
@@ -547,7 +558,7 @@ function draw(dets, displayBox, xf, rawConf) {
 
   if (displayBox) {
     const r = toDisplayRect(displayBox);
-    const locked = visible && smoothedConf >= APPEAR_THRESH;
+    const locked = visible;
     const color = locked ? '#ff3333' : 'rgba(255,170,0,0.65)';
 
     ctx.strokeStyle = color;
@@ -607,8 +618,8 @@ async function inferLoop(runId) {
 
   const dets = postprocess(outTensor, prep);
   const xf = getDisplayTransform();
-  const { rawConf, displayBox } = updateDisplayStability(dets);
-  draw(dets, displayBox, xf, rawConf);
+  const { displayBox } = updateDisplayStability(dets);
+  draw(dets, displayBox, xf);
 
   frameCount++;
   const now = performance.now();
@@ -665,6 +676,8 @@ async function loadSelectedModel() {
   } catch (e) {
     console.error(e);
     setMsg(`❌ 模型切換失敗: ${e.message}`);
+    overlayEl.style.display = 'flex';
+    detCount.style.display = 'none';
     vModel.textContent = 'error';
     bModel.className = 'badge err';
     startBtn.disabled = false;

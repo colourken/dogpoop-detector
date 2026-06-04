@@ -1,91 +1,95 @@
-# 💩 DogPoopAI — GitHub Pages 部署指南
+# 💩 DogPoopAI — Dog Poop Detection for Autonomous Robots
 
-即時狗便便偵測，使用 YOLOv8n + ONNX Runtime Web，完全在瀏覽器本地執行。
+**By Samlyn Robotics Ltd.**  
+© 2026 Samlyn Robotics Ltd. All rights reserved.
 
-## 檔案結構
+---
 
+## 🌐 Live Demo
+
+**https://colourken.github.io/dogpoop-detector/**
+
+Open on any mobile browser. No installation required.
+
+---
+
+## 📱 What This Is
+
+A real-time dog poop detector running entirely in your browser.  
+Built for testing whether AI detection is **stable enough for robot control**.
+
+> "Detected" is not enough. "Stably detected" is what matters.
+
+---
+
+## 🤖 Features
+
+### Detection
+- YOLOv8n model trained on outdoor European park scenes
+- ONNX Runtime Web — model runs locally on your device, no server
+- WebGPU backend (fast) with automatic WASM fallback
+
+### Stability Layer (Robot Perception)
+- **Box smoothing** — moving average over last 5 detections
+- **Confidence EMA** — `smoothed = 0.7 × prev + 0.3 × raw`
+- **Hysteresis** — appears at 0.55, disappears below 0.40
+- **Decision layer** — 5 consecutive frames before `target_locked`
+- **Target memory** — holds target for up to 10 missing frames
+
+### Robot State Machine
 ```
-github_pages/
-├── index.html                  ← 主頁面（所有程式碼）
-├── DogPoopAI_v6_320.onnx       ← 模型檔案（需手動放入）
-└── README.md
-```
-
-## 部署步驟
-
-### 1. 準備模型檔案
-
-將 `DogPoopAI_v6_320.onnx`（11.6 MB）複製到此資料夾，與 `index.html` 同一層。
-
-### 2. 建立 GitHub Repository
-
-```bash
-git init
-git add .
-git commit -m "Initial deploy"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/DogPoopAI.git
-git push -u origin main
-```
-
-### 3. 啟用 GitHub Pages
-
-1. 進入 Repository → **Settings** → **Pages**
-2. Source 選擇 **Deploy from a branch**
-3. Branch 選 `main`，資料夾選 `/ (root)`
-4. 點 **Save**，等待約 1–2 分鐘
-
-網站網址：`https://YOUR_USERNAME.github.io/DogPoopAI/`
-
-> ⚠️ **注意**：ONNX 模型檔案 11.6 MB，超過 GitHub 單檔建議上限（50 MB 以內仍可推送，但建議使用 Git LFS）。
-
-### 使用 Git LFS（建議）
-
-```bash
-git lfs install
-git lfs track "*.onnx"
-git add .gitattributes
-git add DogPoopAI_v6_320.onnx
-git commit -m "Add model via LFS"
-git push
+SEARCHING → TARGET_LOCKED → APPROACHING → ALIGNING → LOST_TARGET
 ```
 
-## 使用方式
+### Approach Guidance
+- Real-time direction guidance: **Left / Right / Center**
+- Offset percentage from screen centre
+- Visual guidance line from centre to target
 
-1. 用手機 Chrome（Android）或 Safari（iOS）開啟網址
-2. 點「開始偵測」，允許相機權限
-3. 將鏡頭對準地面，AI 自動框出便便位置
+### Debug Panel
+- Raw confidence / Smoothed confidence
+- target_locked status
+- Detected / Missing frame count
+- Centre offset X/Y
+- Target area %
+- FPS / Backend (WebGPU or WASM)
 
-## 技術規格
+### Detection History Graph
+- 30-frame smoothed confidence graph
+- Threshold lines at 0.40 (red) and 0.55 (blue)
 
-| 項目 | 內容 |
-|------|------|
-| 模型 | YOLOv8n，1 class（poop） |
-| 輸入 | 320×320 RGB，CHW，float32 |
-| 輸出 | (1, 5, 2100)：x, y, w, h, conf |
-| 後端 | WebGPU 優先，自動 fallback WASM |
-| 信心閾值 | 0.30 |
-| NMS IoU | 0.45 |
+---
 
-## 瀏覽器支援
+## 🧠 Model Versions
 
-| 瀏覽器 | WebGPU | WASM |
-|--------|--------|------|
-| Chrome 113+ (Android/Desktop) | ✅ | ✅ |
-| Safari 18+ (iOS/macOS) | ✅ | ✅ |
-| Firefox | ❌ | ✅ |
-| Chrome iOS | ❌ | ✅ |
+| Version | mAP50 | Dataset | Notes |
+|---------|-------|---------|-------|
+| v6 | 0.666 | 368 images | Base model |
+| v7 | 0.688 | 911 images | +Summer batches +Hard Negatives |
 
-## 本地測試
+Switch between v6 and v7 in the model selector to compare performance.
 
-需要 HTTPS 或 localhost（getUserMedia 需要安全環境）：
+---
 
-```bash
-# Python
-python -m http.server 8080
+## 🔬 Purpose
 
-# Node.js
-npx serve .
-```
+This is a **robot perception testing platform**, not a consumer app.
 
-開啟 `http://localhost:8080`
+Primary goal: Validate whether the AI signal is stable enough to drive physical robot actions.
+
+Built as part of Samlyn Robotics' outdoor autonomous dog waste collection robot project.
+
+---
+
+## ⚠️ Legal
+
+© 2026 Samlyn Robotics Ltd. All rights reserved.  
+Unauthorized copying, redistribution, or commercial use of this software or trained models is prohibited.
+
+---
+
+## 📬 Contact
+
+**Samlyn Robotics Ltd.**  
+samlynrobotics@gmail.com  
+https://poopbot.netlify.app

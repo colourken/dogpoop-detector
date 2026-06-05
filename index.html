@@ -6,7 +6,7 @@
   <meta name="application-name" content="DogPoopAI" />
   <meta name="author" content="Samlyn Robotics Ltd." />
   <meta name="copyright" content="© 2026 Samlyn Robotics Ltd. All rights reserved." />
-  <meta name="build" content="v7-letterbox-r9-dualview-haptic-2026-06-05" />
+  <meta name="build" content="v7-letterbox-r10-zoom235-powersave-default-2026-06-05" />
   <meta name="rights" content="Unauthorized copying, redistribution, or commercial use is prohibited." />
   <title>💩 Dog Poop AI Detector</title>
   <style>
@@ -340,21 +340,22 @@
     <div class="badge" id="b-fps">FPS <span id="v-fps">—</span></div>
     <div class="badge" id="b-backend">Backend <span id="v-backend">—</span></div>
     <div class="badge">imgsz <span>320</span></div>
-    <div class="badge">Build <span>v7-r9-dual-haptic</span></div>
+    <div class="badge">Build <span>v7-r10-zoom235-power</span></div>
     <div class="badge">Top Raw <span id="v-top-raw">0%</span></div>
     <div class="badge">Area <span id="v-top-area">—</span></div>
     <div class="badge">
       Search Zoom
       <select id="search-zoom-select">
-        <option value="1" selected>1x</option>
-        <option value="1.5">1.5x</option>
-        <option value="2">2x</option>
+        <option value="1">1x</option>
+        <option value="2" selected>2x</option>
+        <option value="3">3x</option>
+        <option value="5">5x Experimental</option>
       </select>
     </div>
-    <div class="badge">VCam <span id="v-vcam-interval">every 3f</span></div>
-    <label class="badge toggle">Power Save <input id="power-save-toggle" type="checkbox"><span id="v-power-save">OFF</span></label>
-    <label class="badge toggle">Debug <input id="debug-toggle" type="checkbox" checked><span id="v-debug-toggle">ON</span></label>
-    <label class="badge toggle">ROI <input id="roi-panel-toggle" type="checkbox" checked><span id="v-roi-toggle">ON</span></label>
+    <div class="badge">VCam <span id="v-vcam-interval">every 8f</span></div>
+    <label class="badge toggle">Power Save <input id="power-save-toggle" type="checkbox" checked><span id="v-power-save">ON</span></label>
+    <label class="badge toggle">Debug <input id="debug-toggle" type="checkbox"><span id="v-debug-toggle">OFF</span></label>
+    <label class="badge toggle">ROI <input id="roi-panel-toggle" type="checkbox"><span id="v-roi-toggle">OFF</span></label>
     <label class="badge toggle">Haptic <input id="haptic-toggle" type="checkbox" checked><span id="v-haptic">ON</span></label>
     <div class="badge">Haptic Supported <span id="v-haptic-supported">—</span></div>
     <div class="badge">
@@ -385,7 +386,7 @@
 
 <div id="search-zoom-view">
   <canvas id="search-zoom-canvas" width="600" height="300"></canvas>
-  <div class="view-label">Search Zoom View <span id="v-search-zoom">1x</span></div>
+  <div class="view-label">Search Zoom View <span id="v-search-zoom">2x</span></div>
 </div>
 
 <section id="telemetry">
@@ -412,7 +413,7 @@
 </section>
 
 <footer>
-  <div><strong>DogPoopAI</strong> · v6/v7 · YOLOv8n · 1-class (poop) · Build v7-letterbox-r9-dualview-haptic-2026-06-05</div>
+  <div><strong>DogPoopAI</strong> · v6/v7 · YOLOv8n · 1-class (poop) · Build v7-letterbox-r10-zoom235-powersave-default-2026-06-05</div>
   <div>© 2026 Samlyn Robotics Ltd. All rights reserved.</div>
   <div class="rights">Unauthorized copying, redistribution, or commercial use is prohibited.</div>
 </footer>
@@ -453,6 +454,7 @@ const SECOND_CONFIRM_THRESH = 0.60;
 const MAIN_CONFIRM_THRESH   = 0.55;
 const CONFIRMED_FRAMES_N    = 3;
 const FPS_WARN_THRESH       = 7;
+const SEARCH_ZOOM_PREVIEW_EVERY_N_POWER_SAVE = 3;
 
 // ─── UI refs ─────────────────────────────────────────────────────────────────
 const video     = document.getElementById('video');
@@ -620,21 +622,21 @@ let lastPreprocess = {
   cropY: 0,
   cropW: IMGSZ,
   cropH: IMGSZ,
-  searchZoom: 1,
+  searchZoom: 2,
 };
 
 function validateSearchZoom(value) {
   const zoom = Number(value);
-  if ([1, 1.5, 2].includes(zoom)) return zoom;
-  addDebugLog('warning: invalid Search Zoom value', 'warn');
-  return 1;
+  if ([1, 2, 3, 5].includes(zoom)) return zoom;
+  addDebugLog('warning: invalid Search Zoom value, fallback to 2x', 'warn');
+  return 2;
 }
 
 function createSearchZoomCrop(srcW, srcH) {
   const zoom = validateSearchZoom(searchZoom);
   if (![srcW, srcH].every(Number.isFinite) || srcW <= 0 || srcH <= 0) {
     addDebugLog('warning: invalid video size for Search Zoom crop', 'warn');
-    return { cropX: 0, cropY: 0, cropW: IMGSZ, cropH: IMGSZ, searchZoom: 1 };
+    return { cropX: 0, cropY: 0, cropW: IMGSZ, cropH: IMGSZ, searchZoom: zoom };
   }
 
   const cropW = srcW / zoom;
@@ -644,12 +646,16 @@ function createSearchZoomCrop(srcW, srcH) {
   const crop = { cropX, cropY, cropW, cropH, searchZoom: zoom };
   if (![cropX, cropY, cropW, cropH].every(Number.isFinite) || cropW <= 0 || cropH <= 0) {
     addDebugLog('warning: Search Zoom crop invalid', 'warn');
-    return { cropX: 0, cropY: 0, cropW: srcW, cropH: srcH, searchZoom: 1 };
+    return { cropX: 0, cropY: 0, cropW: srcW, cropH: srcH, searchZoom: zoom };
   }
   if (cropX < 0 || cropY < 0 || cropX + cropW > srcW + 0.01 || cropY + cropH > srcH + 0.01) {
     addDebugLog('warning: Search Zoom crop out of bounds', 'warn');
   }
-  if (zoom > 1) addDebugLog('Search Zoom crop active');
+  const now = performance.now();
+  if (zoom > 1 && now - lastSearchZoomCropActiveLogAt > 1000) {
+    lastSearchZoomCropActiveLogAt = now;
+    addDebugLog('Search Zoom crop active');
+  }
   return crop;
 }
 
@@ -682,9 +688,27 @@ function drawContainedVideoCrop(targetCanvas, targetCtx, prep) {
 }
 
 function renderSearchZoomView(prep) {
+  const shouldThrottle = powerSaveEnabled && inferFrameIndex % SEARCH_ZOOM_PREVIEW_EVERY_N_POWER_SAVE !== 0;
+  if (shouldThrottle) {
+    const now = performance.now();
+    if (now - lastSearchZoomPreviewThrottleLogAt > 1000) {
+      lastSearchZoomPreviewThrottleLogAt = now;
+      addDebugLog('Search Zoom preview throttled for power save');
+    }
+    if (vSearchZoom) vSearchZoom.textContent = formatSearchZoomLabel((prep && prep.searchZoom) || searchZoom);
+    return;
+  }
+  if (lastSearchZoomPreviewFrame === inferFrameIndex) return;
+  lastSearchZoomPreviewFrame = inferFrameIndex;
   const ok = drawContainedVideoCrop(searchZoomCanvas, searchZoomCtx, prep);
-  if (ok) addDebugLog('Search Zoom View updated');
-  if (vSearchZoom) vSearchZoom.textContent = `${(prep && prep.searchZoom) || searchZoom}x`;
+  if (ok) {
+    const now = performance.now();
+    if (now - lastSearchZoomViewUpdatedLogAt > 1000) {
+      lastSearchZoomViewUpdatedLogAt = now;
+      addDebugLog('Search Zoom View updated');
+    }
+  }
+  if (vSearchZoom) vSearchZoom.textContent = formatSearchZoomLabel((prep && prep.searchZoom) || searchZoom);
 }
 
 function preprocess() {
@@ -757,7 +781,13 @@ function postprocess(tensor, prep) {
       addDebugLog('warning: Search Zoom crop mapping invalid', 'warn');
       continue;
     }
-    if (prep.searchZoom > 1) addDebugLog('Search Zoom crop mapped back to original video coordinates');
+    if (prep.searchZoom > 1) {
+      const now = performance.now();
+      if (now - lastSearchZoomMappingLogAt > 1000) {
+        lastSearchZoomMappingLogAt = now;
+        addDebugLog('Search Zoom crop mapped back to original video coordinates');
+      }
+    }
     raw.push({
       x1: x1 / srcW,
       y1: y1 / srcH,
@@ -1135,13 +1165,17 @@ function renderDebugLog() {
   }
 }
 
+function formatSearchZoomLabel(zoom) {
+  return Number(zoom) === 5 ? '5x Experimental' : `${zoom}x`;
+}
+
 function updatePowerSaveUi() {
   if (vPowerSave) vPowerSave.textContent = powerSaveEnabled ? 'ON' : 'OFF';
   if (vDebugToggle) vDebugToggle.textContent = debugLogEnabled ? 'ON' : 'OFF';
   if (vRoiToggle) vRoiToggle.textContent = roiPanelEnabled ? 'ON' : 'OFF';
   if (vHaptic) vHaptic.textContent = hapticEnabled ? 'ON' : 'OFF';
   if (vHapticSupported) vHapticSupported.textContent = hapticSupported ? 'YES' : 'NO';
-  if (vSearchZoom) vSearchZoom.textContent = `${searchZoom}x`;
+  if (vSearchZoom) vSearchZoom.textContent = formatSearchZoomLabel(searchZoom);
   if (vVcamInterval) vVcamInterval.textContent = `every ${secondPassEveryN}f`;
   if (powerSaveToggle) powerSaveToggle.checked = powerSaveEnabled;
   if (debugToggle) debugToggle.checked = debugLogEnabled;
@@ -1200,7 +1234,10 @@ function setSearchZoom(value) {
   searchZoom = nextZoom;
   resetDisplayStability();
   updatePowerSaveUi();
-  addDebugLog(`Search Zoom changed to ${searchZoom}x`);
+  addDebugLog(searchZoom === 5 ? 'Search Zoom changed to 5x Experimental' : `Search Zoom changed to ${searchZoom}x`);
+  if (searchZoom === 5) {
+    addDebugLog('warning: 5x Search Zoom is experimental and has very narrow field of view', 'warn');
+  }
 }
 
 function triggerHapticAlert() {
@@ -1462,6 +1499,10 @@ function resetDisplayStability() {
   topRawConf = 0;
   topRawAreaPercent = null;
   lastTopRawBucket = '';
+  lastSearchZoomPreviewFrame = -1;
+  lastSearchZoomPreviewThrottleLogAt = 0;
+  lastSearchZoomCropActiveLogAt = 0;
+  lastSearchZoomMappingLogAt = 0;
   if (vTopRaw) vTopRaw.textContent = '0%';
   if (vTopArea) vTopArea.textContent = '—';
   lastGuidanceAction = 'Move Forward';
@@ -1603,17 +1644,22 @@ let lastDebugAt = 0;
 let inferFrameIndex = 0;
 let animationFrameIndex = 0;
 let currentFps = 0;
-let powerSaveEnabled = false;
-let debugLogEnabled = true;
-let roiPanelEnabled = true;
+let powerSaveEnabled = true;
+let debugLogEnabled = false;
+let roiPanelEnabled = false;
 let hapticEnabled = true;
 let hapticSupported = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
-let searchZoom = 1;
-let secondPassEveryN = 3;
-let mainFrameSkip = 1;
+let searchZoom = 2;
+let secondPassEveryN = 8;
+let mainFrameSkip = 2;
 let topRawConf = 0;
 let topRawAreaPercent = null;
 let lastTopRawBucket = '';
+let lastSearchZoomPreviewFrame = -1;
+let lastSearchZoomPreviewThrottleLogAt = 0;
+let lastSearchZoomViewUpdatedLogAt = 0;
+let lastSearchZoomCropActiveLogAt = 0;
+let lastSearchZoomMappingLogAt = 0;
 let lastGuidanceAction = 'Move Forward';
 let guidanceStableFrames = 0;
 let lastRobotState = 'SEARCHING';
@@ -1803,6 +1849,8 @@ if (searchZoomSelect) {
 }
 
 if (hapticEnabled && !hapticSupported) addDebugLog('warning: Haptic ON unsupported', 'warn');
+if (powerSaveEnabled) addDebugLog('Power Save default enabled');
+addDebugLog('Search Zoom changed to 2x');
 updatePowerSaveUi();
 
 // ─── Start ────────────────────────────────────────────────────────────────────

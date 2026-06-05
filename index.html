@@ -6,7 +6,7 @@
   <meta name="application-name" content="DogPoopAI" />
   <meta name="author" content="Samlyn Robotics Ltd." />
   <meta name="copyright" content="© 2026 Samlyn Robotics Ltd. All rights reserved." />
-  <meta name="build" content="v7-letterbox-r6-candidate-stable-2026-06-05" />
+  <meta name="build" content="v7-letterbox-r7-roi-zoom-debug-2026-06-05" />
   <meta name="rights" content="Unauthorized copying, redistribution, or commercial use is prohibited." />
   <title>💩 Dog Poop AI Detector</title>
   <style>
@@ -186,19 +186,20 @@
 
     #vcam-body {
       display: grid;
-      grid-template-columns: 132px minmax(0, 1fr);
+      grid-template-columns: 220px minmax(0, 1fr);
       gap: 10px;
       padding: 10px;
       align-items: start;
     }
 
     #roi-canvas {
-      width: 132px;
-      height: 132px;
+      width: 220px;
+      height: 220px;
       background: #050505;
       border: 1px solid #333;
       border-radius: 6px;
       display: block;
+      aspect-ratio: 1 / 1;
     }
 
     .metric-grid {
@@ -244,6 +245,18 @@
     #debug-log li.warn { color: #ffcc66; }
     #debug-log li.err { color: #ff7777; }
 
+    @media (max-width: 499px) {
+      #vcam-body {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      #roi-canvas {
+        width: min(100%, 180px);
+        height: auto;
+        justify-self: center;
+      }
+    }
+
     footer {
       margin: 16px 0 24px;
       font-size: 0.65rem;
@@ -271,7 +284,7 @@
     <div class="badge" id="b-fps">FPS <span id="v-fps">—</span></div>
     <div class="badge" id="b-backend">Backend <span id="v-backend">—</span></div>
     <div class="badge">imgsz <span>320</span></div>
-    <div class="badge">Build <span>v7-r6-stable</span></div>
+    <div class="badge">Build <span>v7-r7-zoom</span></div>
     <div class="badge">
       Model
       <select id="model-select">
@@ -301,7 +314,7 @@
   <div class="panel" id="vcam-panel">
     <h2>Virtual Camera 2 — ROI Re-Detection</h2>
     <div id="vcam-body">
-      <canvas id="roi-canvas" width="160" height="160"></canvas>
+      <canvas id="roi-canvas" width="220" height="220"></canvas>
       <div class="metric-grid">
         <div class="metric"><b>ROI Mode</b><span id="v-roi-mode">OFF</span></div>
         <div class="metric"><b>VCam Result</b><span id="v-vcam-result">NO ROI</span></div>
@@ -310,7 +323,7 @@
         <div class="metric"><b>Confirmed Frames</b><span id="v-confirmed-frames">0</span></div>
         <div class="metric"><b>ROI Size</b><span id="v-roi-size">—</span></div>
         <div class="metric"><b>Main Result</b><span id="v-main-result">SEARCHING</span></div>
-        <div class="metric"><b>ROI Zoom</b><span id="v-roi-zoom">4x</span></div>
+        <div class="metric"><b>AI Zoom</b><span id="v-roi-zoom">OFF</span></div>
       </div>
     </div>
   </div>
@@ -321,7 +334,7 @@
 </section>
 
 <footer>
-  <div><strong>DogPoopAI</strong> · v6/v7 · YOLOv8n · 1-class (poop) · Build v7-letterbox-r6-candidate-stable-2026-06-05</div>
+  <div><strong>DogPoopAI</strong> · v6/v7 · YOLOv8n · 1-class (poop) · Build v7-letterbox-r7-roi-zoom-debug-2026-06-05</div>
   <div>© 2026 Samlyn Robotics Ltd. All rights reserved.</div>
   <div class="rights">Unauthorized copying, redistribution, or commercial use is prohibited.</div>
 </footer>
@@ -607,6 +620,7 @@ function iou(a, b) {
 }
 
 function addDebugLog(message, level = 'info') {
+  // Debug log must be throttled or only logged on state changes.
   const now = performance.now();
   if (message === lastDebugMessage && now - lastDebugAt < 1000) return;
   lastDebugMessage = message;
@@ -721,6 +735,46 @@ function validateRoi(roi) {
   return true;
 }
 
+function calculateAiZoom(roi) {
+  if (!roi) {
+    addDebugLog('warning: AI zoom skipped, no ROI', 'warn');
+    return null;
+  }
+  if (!Number.isFinite(IMGSZ) || IMGSZ <= 0) {
+    addDebugLog('error: invalid IMGSZ for AI zoom', 'err');
+    return null;
+  }
+  if (!Number.isFinite(roi.w) || roi.w <= 0 || !Number.isFinite(roi.h) || roi.h <= 0) {
+    addDebugLog('warning: invalid ROI size for AI zoom', 'warn');
+    return null;
+  }
+
+  const effectiveZoom = IMGSZ / roi.w;
+  if (!Number.isFinite(effectiveZoom)) {
+    addDebugLog('warning: AI zoom is not a finite number', 'warn');
+    return null;
+  }
+  return effectiveZoom;
+}
+
+function updateAiZoomDebug(effectiveZoom) {
+  if (!Number.isFinite(effectiveZoom)) return;
+
+  const bucket = effectiveZoom < 1 ? 'below'
+    : effectiveZoom >= 1.5 ? 'good'
+      : `mid-${Math.round(effectiveZoom * 10)}`;
+  if (bucket === virtualCamera.lastAiZoomBucket) return;
+  virtualCamera.lastAiZoomBucket = bucket;
+
+  addDebugLog(`AI zoom = ${effectiveZoom.toFixed(2)}x`);
+  if (effectiveZoom < 1) {
+    addDebugLog('warning: ROI effective zoom below 1.0x', 'warn');
+    addDebugLog('ROI larger than model input, not actually zoomed', 'warn');
+  } else if (effectiveZoom >= 1.5) {
+    addDebugLog('ROI effective zoom good');
+  }
+}
+
 function validateVirtualCameraOutput(out) {
   if (!out || typeof out !== 'object') {
     addDebugLog('error: second output tensor missing', 'err');
@@ -768,16 +822,26 @@ async function runVirtualCameraInference(roi) {
 }
 
 function drawVirtualCameraPanel(roi) {
+  if (!roiCanvas || !roiCtx) {
+    addDebugLog('warning: ROI preview skipped, missing canvas', 'warn');
+    return;
+  }
   roiCtx.clearRect(0, 0, roiCanvas.width, roiCanvas.height);
   roiCtx.fillStyle = '#050505';
   roiCtx.fillRect(0, 0, roiCanvas.width, roiCanvas.height);
   if (!roi || !isValidBox(roi)) {
+    addDebugLog('warning: ROI preview skipped, invalid ROI', 'warn');
     roiCtx.fillStyle = '#777';
     roiCtx.font = '600 14px sans-serif';
-    roiCtx.fillText('NO ROI', 52, 84);
+    roiCtx.fillText('NO ROI', roiCanvas.width / 2 - 24, roiCanvas.height / 2 + 5);
+    return;
+  }
+  if (!Number.isFinite(video.videoWidth) || !Number.isFinite(video.videoHeight) || video.videoWidth <= 0 || video.videoHeight <= 0) {
+    addDebugLog('warning: ROI preview skipped, invalid video frame', 'warn');
     return;
   }
   roiCtx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, roiCanvas.width, roiCanvas.height);
+  addDebugLog('ROI preview updated');
 }
 
 function updateVirtualCameraState(candidate, roi, secondResult, fps) {
@@ -797,6 +861,8 @@ function updateVirtualCameraState(candidate, roi, secondResult, fps) {
   else virtualCamera.confirmedFrames = 0;
 
   virtualCamera.roi = roi;
+  virtualCamera.aiZoom = roi ? calculateAiZoom(roi) : null;
+  updateAiZoomDebug(virtualCamera.aiZoom);
   virtualCamera.mode = !hasCandidate ? 'OFF' : virtualCamera.confirmedFrames >= CONFIRMED_FRAMES_N ? 'CONFIRMED' : 'ACTIVE';
   virtualCamera.result = !hasCandidate ? 'NO ROI' : virtualCamera.confirmedFrames >= CONFIRMED_FRAMES_N ? 'CONFIRMED' : 'CANDIDATE';
   virtualCamera.mainResult = !hasCandidate ? 'SEARCHING' : smoothedConf >= MAIN_CONFIRM_THRESH ? 'TARGET_LOCKED' : 'CANDIDATE_FOUND';
@@ -813,7 +879,7 @@ function updateVirtualCameraUi() {
   vConfirmedFrames.textContent = virtualCamera.confirmedFrames;
   vRoiSize.textContent = virtualCamera.roi ? `${Math.round(virtualCamera.roi.w)}x${Math.round(virtualCamera.roi.h)}` : '—';
   vMainResult.textContent = virtualCamera.mainResult;
-  vRoiZoom.textContent = virtualCamera.roi ? '4x' : 'OFF';
+  vRoiZoom.textContent = Number.isFinite(virtualCamera.aiZoom) ? `AI Zoom ${virtualCamera.aiZoom.toFixed(1)}x` : 'OFF';
 }
 
 function setStateBanner(state) {
@@ -832,6 +898,7 @@ function setStateBanner(state) {
 }
 
 function updateRobotState(candidate, displayBoxes, guidance) {
+  if (typeof robotState !== 'string') addDebugLog('warning: robotState invalid', 'warn');
   let nextState = 'SEARCHING';
   if (virtualCamera.result === 'CONFIRMED') nextState = 'CONFIRMED_POOP';
   else if (displayBoxes.length && smoothedConf >= MAIN_CONFIRM_THRESH) nextState = 'TARGET_LOCKED';
@@ -1060,6 +1127,8 @@ function resetDisplayStability() {
     secondSmoothedConf: 0,
     confirmedFrames: 0,
     roi: null,
+    aiZoom: null,
+    lastAiZoomBucket: '',
   };
   drawVirtualCameraPanel(null);
   updateVirtualCameraUi();
@@ -1196,6 +1265,8 @@ let virtualCamera = {
   secondSmoothedConf: 0,
   confirmedFrames: 0,
   roi: null,
+  aiZoom: null,
+  lastAiZoomBucket: '',
 };
 
 function stopInference() {
@@ -1268,9 +1339,17 @@ async function inferLoop(runId) {
     frameCount = 0; lastTs = now;
   }
 
-  detCount.textContent = displayBoxes.length
-    ? `💩 ${robotState} · 目標 ${displayBoxes.length} 個 · 最高 ${(smoothedConf * 100).toFixed(0)}%${guidance ? ` · ${guidance.action}` : ''}`
-    : `${robotState} · 未偵測到便便`;
+  if (robotState === 'CONFIRMED_POOP') {
+    if (!Number.isFinite(virtualCamera.secondSmoothedConf)) addDebugLog('warning: second smoothed confidence invalid', 'warn');
+    if (!displayBoxes.length) addDebugLog('confirmed by VCam even without main display box');
+    addDebugLog('confirmed display updated correctly');
+    const second = Number.isFinite(virtualCamera.secondSmoothedConf) ? virtualCamera.secondSmoothedConf : 0;
+    detCount.textContent = `💩 CONFIRMED_POOP · VCam confirmed · Second ${(second * 100).toFixed(0)}%`;
+  } else {
+    detCount.textContent = displayBoxes.length
+      ? `💩 ${robotState} · 目標 ${displayBoxes.length} 個 · 最高 ${(smoothedConf * 100).toFixed(0)}%${guidance ? ` · ${guidance.action}` : ''}`
+      : `${robotState} · 未偵測到便便`;
+  }
 
   requestAnimationFrame(() => inferLoop(runId));
 }

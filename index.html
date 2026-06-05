@@ -6,7 +6,7 @@
   <meta name="application-name" content="DogPoopAI" />
   <meta name="author" content="Samlyn Robotics Ltd." />
   <meta name="copyright" content="© 2026 Samlyn Robotics Ltd. All rights reserved." />
-  <meta name="build" content="v7-letterbox-r4-guidance-2026-06-04" />
+  <meta name="build" content="v7-letterbox-r5-vcam-2026-06-05" />
   <meta name="rights" content="Unauthorized copying, redistribution, or commercial use is prohibited." />
   <title>💩 Dog Poop AI Detector</title>
   <style>
@@ -134,6 +134,20 @@
     #start-btn:active { opacity: 0.8; }
     #start-btn:disabled { opacity: 0.5; cursor: default; }
 
+    #state-banner {
+      position: absolute;
+      top: 10px;
+      left: 12px;
+      background: rgba(0,0,0,0.62);
+      border: 1px solid rgba(85,187,255,0.4);
+      border-radius: 6px;
+      padding: 4px 9px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #dff6ff;
+      z-index: 2;
+    }
+
     #det-count {
       position: absolute;
       bottom: 10px;
@@ -144,6 +158,91 @@
       font-size: 0.75rem;
       color: #eee;
     }
+
+    #telemetry {
+      width: 100%;
+      max-width: 600px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+      margin-top: 10px;
+      padding: 0 8px;
+    }
+
+    .panel {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .panel h2 {
+      font-size: 0.78rem;
+      line-height: 1.2;
+      padding: 8px 10px;
+      color: #fff;
+      border-bottom: 1px solid #242424;
+    }
+
+    #vcam-body {
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr);
+      gap: 10px;
+      padding: 10px;
+      align-items: start;
+    }
+
+    #roi-canvas {
+      width: 132px;
+      height: 132px;
+      background: #050505;
+      border: 1px solid #333;
+      border-radius: 6px;
+      display: block;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      font-size: 0.68rem;
+    }
+
+    .metric {
+      background: #181818;
+      border: 1px solid #292929;
+      border-radius: 6px;
+      padding: 5px 7px;
+      min-width: 0;
+    }
+
+    .metric b {
+      display: block;
+      color: #777;
+      font-size: 0.6rem;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .metric span {
+      color: #dcecff;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    #debug-log {
+      list-style: none;
+      max-height: 128px;
+      overflow: auto;
+      padding: 8px 10px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.62rem;
+      line-height: 1.35;
+      color: #9fb3c8;
+    }
+
+    #debug-log li.warn { color: #ffcc66; }
+    #debug-log li.err { color: #ff7777; }
 
     footer {
       margin: 16px 0 24px;
@@ -172,7 +271,7 @@
     <div class="badge" id="b-fps">FPS <span id="v-fps">—</span></div>
     <div class="badge" id="b-backend">Backend <span id="v-backend">—</span></div>
     <div class="badge">imgsz <span>320</span></div>
-    <div class="badge">Build <span>v7-letterbox-r4</span></div>
+    <div class="badge">Build <span>v7-r5-vcam</span></div>
     <div class="badge">
       Model
       <select id="model-select">
@@ -189,6 +288,7 @@
 <div id="viewport">
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
+  <div id="state-banner">SEARCHING</div>
   <div id="overlay-msg">
     <div class="icon">📷</div>
     <div id="msg-text">點擊開始，開啟相機並載入 AI 模型</div>
@@ -197,8 +297,31 @@
   <div id="det-count" style="display:none">偵測中…</div>
 </div>
 
+<section id="telemetry">
+  <div class="panel" id="vcam-panel">
+    <h2>Virtual Camera 2 — ROI Re-Detection</h2>
+    <div id="vcam-body">
+      <canvas id="roi-canvas" width="160" height="160"></canvas>
+      <div class="metric-grid">
+        <div class="metric"><b>ROI Mode</b><span id="v-roi-mode">OFF</span></div>
+        <div class="metric"><b>VCam Result</b><span id="v-vcam-result">NO ROI</span></div>
+        <div class="metric"><b>Second Raw Conf</b><span id="v-second-raw">0%</span></div>
+        <div class="metric"><b>Second Smoothed</b><span id="v-second-smooth">0%</span></div>
+        <div class="metric"><b>Confirmed Frames</b><span id="v-confirmed-frames">0</span></div>
+        <div class="metric"><b>ROI Size</b><span id="v-roi-size">—</span></div>
+        <div class="metric"><b>Main Result</b><span id="v-main-result">SEARCHING</span></div>
+        <div class="metric"><b>ROI Zoom</b><span id="v-roi-zoom">4x</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Debug Log</h2>
+    <ul id="debug-log"></ul>
+  </div>
+</section>
+
 <footer>
-  <div><strong>DogPoopAI</strong> · v6/v7 · YOLOv8n · 1-class (poop) · Build v7-letterbox-r4-guidance-2026-06-04</div>
+  <div><strong>DogPoopAI</strong> · v6/v7 · YOLOv8n · 1-class (poop) · Build v7-letterbox-r5-vcam-2026-06-05</div>
   <div>© 2026 Samlyn Robotics Ltd. All rights reserved.</div>
   <div class="rights">Unauthorized copying, redistribution, or commercial use is prohibited.</div>
 </footer>
@@ -213,6 +336,7 @@ let currentModelKey = 'v7';
 let currentModelUrl = MODELS[currentModelKey].url;
 
 const IMGSZ       = 320;
+const CANDIDATE_THRESH = 0.25;
 const CONF_THRESH = 0.30;
 const NMS_IOU     = 0.45;
 
@@ -229,6 +353,13 @@ const TRACK_IOU_MATCH = 0.15;    // match detections to existing tracks
 const ALIGN_THRESH    = 0.15;    // horizontal offset threshold for turn guidance
 const CLOSE_AREA_RATIO= 0.16;    // box area ratio treated as close range
 const MED_AREA_RATIO  = 0.06;    // box area ratio treated as medium range
+const SECOND_PASS_EVERY_N = 3;   // run virtual camera inference every N frames
+const ROI_SCALE       = 2.0;     // crop around candidate box
+const ROI_MIN_SIZE    = 128;     // minimum ROI size in source pixels
+const SECOND_CONFIRM_THRESH = 0.60;
+const MAIN_CONFIRM_THRESH   = 0.55;
+const CONFIRMED_FRAMES_N    = 3;
+const FPS_WARN_THRESH       = 7;
 
 // ─── UI refs ─────────────────────────────────────────────────────────────────
 const video     = document.getElementById('video');
@@ -238,6 +369,18 @@ const overlayEl = document.getElementById('overlay-msg');
 const msgText   = document.getElementById('msg-text');
 const startBtn  = document.getElementById('start-btn');
 const detCount  = document.getElementById('det-count');
+const stateBanner = document.getElementById('state-banner');
+const roiCanvas = document.getElementById('roi-canvas');
+const roiCtx = roiCanvas.getContext('2d', { willReadFrequently: true });
+const vRoiMode = document.getElementById('v-roi-mode');
+const vVcamResult = document.getElementById('v-vcam-result');
+const vSecondRaw = document.getElementById('v-second-raw');
+const vSecondSmooth = document.getElementById('v-second-smooth');
+const vConfirmedFrames = document.getElementById('v-confirmed-frames');
+const vRoiSize = document.getElementById('v-roi-size');
+const vMainResult = document.getElementById('v-main-result');
+const vRoiZoom = document.getElementById('v-roi-zoom');
+const debugLogEl = document.getElementById('debug-log');
 const modelSel  = document.getElementById('model-select');
 const vFps      = document.getElementById('v-fps');
 const vBackend  = document.getElementById('v-backend');
@@ -354,6 +497,9 @@ async function startCamera() {
 const offscreen = document.createElement('canvas');
 offscreen.width = offscreen.height = IMGSZ;
 const offCtx = offscreen.getContext('2d', { willReadFrequently: true });
+const roiOffscreen = document.createElement('canvas');
+roiOffscreen.width = roiOffscreen.height = IMGSZ;
+const roiOffCtx = roiOffscreen.getContext('2d', { willReadFrequently: true });
 let lastPreprocess = {
   scale: 1,
   padX: 0,
@@ -387,6 +533,22 @@ function preprocess() {
   return new ort.Tensor('float32', f, [1, 3, IMGSZ, IMGSZ]);
 }
 
+function tensorFromRoi(roi) {
+  roiOffCtx.fillStyle = 'rgb(114,114,114)';
+  roiOffCtx.fillRect(0, 0, IMGSZ, IMGSZ);
+  roiOffCtx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, IMGSZ, IMGSZ);
+
+  const { data } = roiOffCtx.getImageData(0, 0, IMGSZ, IMGSZ);
+  const n = IMGSZ * IMGSZ;
+  const f = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) {
+    f[i]         = data[i * 4]     / 255;
+    f[n + i]     = data[i * 4 + 1] / 255;
+    f[2 * n + i] = data[i * 4 + 2] / 255;
+  }
+  return new ort.Tensor('float32', f, [1, 3, IMGSZ, IMGSZ]);
+}
+
 // ─── Postprocessing ───────────────────────────────────────────────────────────
 // Output shape: [1, 5, 2100]  →  rows = x_c, y_c, w, h, conf  (coords in 0..IMGSZ)
 function postprocess(tensor, prep) {
@@ -397,7 +559,7 @@ function postprocess(tensor, prep) {
 
   for (let i = 0; i < N; i++) {
     const conf = d[4 * N + i];
-    if (conf < CONF_THRESH) continue;
+    if (conf < CANDIDATE_THRESH) continue;
     const xc = d[0 * N + i];
     const yc = d[1 * N + i];
     const bw = d[2 * N + i];
@@ -439,6 +601,230 @@ function iou(a, b) {
   const inter = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
   if (!inter) return 0;
   return inter / ((a.x2-a.x1)*(a.y2-a.y1) + (b.x2-b.x1)*(b.y2-b.y1) - inter);
+}
+
+function addDebugLog(message, level = 'info') {
+  const now = performance.now();
+  if (message === lastDebugMessage && now - lastDebugAt < 1000) return;
+  lastDebugMessage = message;
+  lastDebugAt = now;
+  const ts = new Date().toLocaleTimeString([], { hour12: false });
+  debugLogs.unshift({ message: `[${ts}] ${message}`, level });
+  debugLogs = debugLogs.slice(0, 20);
+  debugLogEl.textContent = '';
+  for (const item of debugLogs) {
+    const li = document.createElement('li');
+    li.className = item.level;
+    li.textContent = item.message;
+    debugLogEl.appendChild(li);
+  }
+}
+
+function isValidBox(box) {
+  return box && ['x', 'y', 'w', 'h'].every(key => Number.isFinite(box[key])) && box.w > 0 && box.h > 0;
+}
+
+function findBestCandidate(dets) {
+  if (!dets.length) return null;
+  const candidate = dets.find(det => det.conf >= CANDIDATE_THRESH) || dets[0];
+  if (candidate) addDebugLog(`candidate found conf=${(candidate.conf * 100).toFixed(0)}%`);
+  return candidate || null;
+}
+
+function createRoiFromCandidate(candidate) {
+  if (!isValidBox(candidate)) {
+    addDebugLog('warning: no ROI available', 'warn');
+    return null;
+  }
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!Number.isFinite(vw) || !Number.isFinite(vh) || vw <= 0 || vh <= 0) {
+    addDebugLog('warning: invalid video frame size', 'warn');
+    return null;
+  }
+
+  const cx = candidate.x + candidate.w / 2;
+  const cy = candidate.y + candidate.h / 2;
+  let side = Math.max(candidate.w, candidate.h) * ROI_SCALE;
+  if (side < ROI_MIN_SIZE) {
+    side = ROI_MIN_SIZE;
+    addDebugLog('ROI too small, using minimum ROI size', 'warn');
+  }
+  side = Math.min(side, vw, vh);
+
+  let x = cx - side / 2;
+  let y = cy - side / 2;
+  let clipped = false;
+  if (x < 0) { x = 0; clipped = true; }
+  if (y < 0) { y = 0; clipped = true; }
+  if (x + side > vw) { x = vw - side; clipped = true; }
+  if (y + side > vh) { y = vh - side; clipped = true; }
+  if (clipped) addDebugLog('ROI clipped to frame boundary', 'warn');
+
+  const roi = { x, y, w: side, h: side };
+  addDebugLog(`ROI crop created ${Math.round(side)}x${Math.round(side)}`);
+  return roi;
+}
+
+function validateRoi(roi) {
+  if (!isValidBox(roi)) {
+    addDebugLog('warning: invalid ROI box', 'warn');
+    return false;
+  }
+  if (roi.w < ROI_MIN_SIZE || roi.h < ROI_MIN_SIZE) {
+    addDebugLog('warning: ROI below minimum size', 'warn');
+    return false;
+  }
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (roi.x < 0 || roi.y < 0 || roi.x + roi.w > vw || roi.y + roi.h > vh) {
+    addDebugLog('warning: ROI boundary validation failed', 'warn');
+    return false;
+  }
+  return true;
+}
+
+function validateVirtualCameraOutput(out) {
+  if (!out || typeof out !== 'object') {
+    addDebugLog('error: second output tensor missing', 'err');
+    return null;
+  }
+  const tensor = out[Object.keys(out)[0]];
+  if (!tensor || !tensor.data || !tensor.dims) {
+    addDebugLog('error: second output tensor invalid', 'err');
+    return null;
+  }
+  return tensor;
+}
+
+async function runVirtualCameraInference(roi) {
+  if (!session) {
+    addDebugLog('error: session missing before ROI inference', 'err');
+    return null;
+  }
+  if (!validateRoi(roi)) return null;
+
+  try {
+    addDebugLog('virtual camera inference started');
+    const start = performance.now();
+    const t = tensorFromRoi(roi);
+    const out = await session.run({ images: t });
+    const elapsed = performance.now() - start;
+    if (elapsed > 120) addDebugLog(`warning: second inference slow ${elapsed.toFixed(0)}ms`, 'warn');
+
+    const tensor = validateVirtualCameraOutput(out);
+    if (!tensor) return null;
+
+    const roiPrep = { scale: IMGSZ / roi.w, padX: 0, padY: 0, srcW: roi.w, srcH: roi.h };
+    const secondDets = postprocess(tensor, roiPrep);
+    const secondRawConf = secondDets.length ? Math.max(...secondDets.map(det => det.conf)) : 0;
+    if (!Number.isFinite(secondRawConf)) {
+      addDebugLog('error: second confidence is not a number', 'err');
+      return null;
+    }
+    addDebugLog(`virtual camera inference completed conf=${(secondRawConf * 100).toFixed(0)}%`);
+    return { secondRawConf, secondDets, elapsed };
+  } catch (e) {
+    addDebugLog(`error: ROI inference failed: ${e.message}`, 'err');
+    return null;
+  }
+}
+
+function drawVirtualCameraPanel(roi) {
+  roiCtx.clearRect(0, 0, roiCanvas.width, roiCanvas.height);
+  roiCtx.fillStyle = '#050505';
+  roiCtx.fillRect(0, 0, roiCanvas.width, roiCanvas.height);
+  if (!roi || !isValidBox(roi)) {
+    roiCtx.fillStyle = '#777';
+    roiCtx.font = '600 14px sans-serif';
+    roiCtx.fillText('NO ROI', 52, 84);
+    return;
+  }
+  roiCtx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, roiCanvas.width, roiCanvas.height);
+}
+
+function updateVirtualCameraState(candidate, roi, secondResult, fps) {
+  const hasCandidate = !!candidate;
+  if (secondResult !== undefined) {
+    const secondRawConf = secondResult ? secondResult.secondRawConf : 0;
+    virtualCamera.secondRawConf = secondRawConf;
+    virtualCamera.secondSmoothedConf = (1 - EMA_ALPHA) * virtualCamera.secondSmoothedConf + EMA_ALPHA * secondRawConf;
+    if (secondResult) addDebugLog('second pass confidence updated');
+    else if (hasCandidate) addDebugLog('warning: second pass low confidence', 'warn');
+  }
+
+  const secondConfirmed = virtualCamera.secondSmoothedConf >= SECOND_CONFIRM_THRESH;
+  if (secondConfirmed) addDebugLog('confirmed by virtual camera');
+
+  if (hasCandidate && secondConfirmed) virtualCamera.confirmedFrames++;
+  else virtualCamera.confirmedFrames = 0;
+
+  virtualCamera.roi = roi;
+  virtualCamera.mode = !hasCandidate ? 'OFF' : virtualCamera.confirmedFrames >= CONFIRMED_FRAMES_N ? 'CONFIRMED' : 'ACTIVE';
+  virtualCamera.result = !hasCandidate ? 'NO ROI' : virtualCamera.confirmedFrames >= CONFIRMED_FRAMES_N ? 'CONFIRMED' : 'CANDIDATE';
+  virtualCamera.mainResult = !hasCandidate ? 'SEARCHING' : smoothedConf >= MAIN_CONFIRM_THRESH ? 'TARGET_LOCKED' : 'CANDIDATE_FOUND';
+
+  if (fps > 0 && fps < FPS_WARN_THRESH) addDebugLog(`warning: low FPS ${fps}`, 'warn');
+  return virtualCamera;
+}
+
+function updateVirtualCameraUi() {
+  vRoiMode.textContent = virtualCamera.mode;
+  vVcamResult.textContent = virtualCamera.result;
+  vSecondRaw.textContent = `${(virtualCamera.secondRawConf * 100).toFixed(0)}%`;
+  vSecondSmooth.textContent = `${(virtualCamera.secondSmoothedConf * 100).toFixed(0)}%`;
+  vConfirmedFrames.textContent = virtualCamera.confirmedFrames;
+  vRoiSize.textContent = virtualCamera.roi ? `${Math.round(virtualCamera.roi.w)}x${Math.round(virtualCamera.roi.h)}` : '—';
+  vMainResult.textContent = virtualCamera.mainResult;
+  vRoiZoom.textContent = virtualCamera.roi ? '4x' : 'OFF';
+}
+
+function setStateBanner(state) {
+  robotState = state;
+  stateBanner.textContent = state;
+  stateBanner.style.borderColor = state === 'CONFIRMED_POOP'
+    ? 'rgba(80,220,120,0.75)'
+    : state === 'CANDIDATE_FOUND'
+      ? 'rgba(255,204,64,0.7)'
+      : 'rgba(85,187,255,0.4)';
+  stateBanner.style.color = state === 'CONFIRMED_POOP'
+    ? '#9cffb4'
+    : state === 'CANDIDATE_FOUND'
+      ? '#ffe28a'
+      : '#dff6ff';
+}
+
+function updateRobotState(candidate, displayBoxes, guidance) {
+  let nextState = 'SEARCHING';
+  if (virtualCamera.result === 'CONFIRMED') nextState = 'CONFIRMED_POOP';
+  else if (displayBoxes.length && smoothedConf >= MAIN_CONFIRM_THRESH) nextState = 'TARGET_LOCKED';
+  else if (candidate) nextState = 'CANDIDATE_FOUND';
+  else if (displayBoxes.length && guidance) nextState = guidance.action.includes('Turn') ? 'ALIGNING' : 'APPROACHING';
+  else if (tracks.length) nextState = 'LOST_TARGET';
+
+  setStateBanner(nextState);
+  return nextState;
+}
+
+function applyGuidanceHysteresis(action, offset) {
+  const turnExit = ALIGN_THRESH * 0.65;
+  let nextAction = action;
+
+  if (lastGuidanceAction === 'Turn Left' && offset < -turnExit) nextAction = 'Turn Left';
+  if (lastGuidanceAction === 'Turn Right' && offset > turnExit) nextAction = 'Turn Right';
+  if (nextAction !== lastGuidanceAction) {
+    guidanceStableFrames++;
+    if (guidanceStableFrames < 2) nextAction = lastGuidanceAction;
+    else {
+      lastGuidanceAction = nextAction;
+      guidanceStableFrames = 0;
+    }
+  } else {
+    guidanceStableFrames = 0;
+  }
+
+  if (Math.abs(offset) < turnExit && action === 'Move Forward') lastGuidanceAction = 'Move Forward';
+  return lastGuidanceAction;
 }
 
 
@@ -506,6 +892,7 @@ function getApproachGuidance(displayBoxes, xf) {
   const originX = xf.displayWidth / 2;
   const originY = xf.displayHeight * 0.96;
   const offset = (targetX - originX) / (xf.displayWidth / 2);
+  const vertical = targetY / xf.displayHeight;
   const areaRatio = (primary.w * primary.h) / (xf.videoWidth * xf.videoHeight);
   const distance = areaRatio >= CLOSE_AREA_RATIO ? 'Close' : areaRatio >= MED_AREA_RATIO ? 'Medium' : 'Far';
 
@@ -513,6 +900,7 @@ function getApproachGuidance(displayBoxes, xf) {
   if (offset < -ALIGN_THRESH) action = 'Turn Left';
   else if (offset > ALIGN_THRESH) action = 'Turn Right';
   else if (distance === 'Close') action = 'Ready to Clean';
+  action = applyGuidanceHysteresis(action, offset);
 
   return {
     primary,
@@ -521,8 +909,10 @@ function getApproachGuidance(displayBoxes, xf) {
     originX,
     originY,
     offset,
+    vertical,
     offsetPct: Math.round(Math.abs(offset) * 100),
     alignmentPct: Math.round(Math.max(0, 1 - Math.abs(offset)) * 100),
+    verticalPct: Math.round(vertical * 100),
     distance,
     action,
   };
@@ -614,10 +1004,25 @@ function resetDisplayStability() {
   visible = false;
   tracks = [];
   nextTrackId = 1;
+  robotState = 'SEARCHING';
+  inferFrameIndex = 0;
+  lastGuidanceAction = 'Move Forward';
+  guidanceStableFrames = 0;
+  virtualCamera = {
+    mode: 'OFF',
+    result: 'NO ROI',
+    mainResult: 'SEARCHING',
+    secondRawConf: 0,
+    secondSmoothedConf: 0,
+    confirmedFrames: 0,
+    roi: null,
+  };
+  drawVirtualCameraPanel(null);
+  updateVirtualCameraUi();
 }
 
 // ─── Draw ─────────────────────────────────────────────────────────────────────
-function draw(dets, displayBoxes, xf, guidance) {
+function draw(dets, displayBoxes, xf, guidance, candidate) {
   const { displayWidth: dw, displayHeight: dh, dpr } = xf;
 
   canvas.width  = Math.round(dw * dpr);
@@ -672,6 +1077,7 @@ function draw(dets, displayBoxes, xf, guidance) {
       `Guide: ${guidance.action}`,
       `Target #${guidance.primary.id} · ${guidance.distance}`,
       `Offset ${direction} ${guidance.offsetPct}% · Align ${guidance.alignmentPct}%`,
+      `Vertical ${guidance.verticalPct}%`,
     ];
     const panelFs = Math.max(11, Math.min(14, dw / 38));
     const panelPad = 7;
@@ -685,11 +1091,18 @@ function draw(dets, displayBoxes, xf, guidance) {
     ctx.restore();
   }
 
+  if (candidate && isValidBox(candidate)) {
+    const r = toDisplayRect(candidate);
+    ctx.strokeStyle = virtualCamera.result === 'CONFIRMED' ? '#50dc78' : '#ffcc40';
+    ctx.lineWidth = Math.max(2, lw * 0.9);
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+  }
+
   for (const displayBox of displayBoxes) {
     const r = toDisplayRect(displayBox);
     const locked = displayBox.locked;
     const primary = guidance && displayBox.id === guidance.primary.id;
-    const color = primary ? '#55bbff' : locked ? '#ff3333' : 'rgba(255,170,0,0.65)';
+    const color = virtualCamera.result === 'CONFIRMED' && primary ? '#50dc78' : primary ? '#55bbff' : locked ? '#ff3333' : 'rgba(255,170,0,0.65)';
 
     ctx.strokeStyle = color;
     ctx.lineWidth = primary ? lw * 1.25 : locked ? lw : Math.max(1.5, lw * 0.75);
@@ -716,6 +1129,23 @@ let smoothedConf = 0;
 let visible = false;
 let tracks = [];
 let nextTrackId = 1;
+let robotState = 'SEARCHING';
+let debugLogs = [];
+let lastDebugMessage = '';
+let lastDebugAt = 0;
+let inferFrameIndex = 0;
+let currentFps = 0;
+let lastGuidanceAction = 'Move Forward';
+let guidanceStableFrames = 0;
+let virtualCamera = {
+  mode: 'OFF',
+  result: 'NO ROI',
+  mainResult: 'SEARCHING',
+  secondRawConf: 0,
+  secondSmoothedConf: 0,
+  confirmedFrames: 0,
+  roi: null,
+};
 
 function stopInference() {
   running = false;
@@ -746,22 +1176,49 @@ async function inferLoop(runId) {
 
   const dets = postprocess(outTensor, prep);
   const xf = getDisplayTransform();
+  inferFrameIndex++;
+  const candidate = findBestCandidate(dets);
   const { displayBoxes } = updateDisplayStability(dets);
   const guidance = getApproachGuidance(displayBoxes, xf);
-  draw(dets, displayBoxes, xf, guidance);
+
+  let roi = null;
+  let secondResult;
+  if (candidate) {
+    roi = createRoiFromCandidate(candidate);
+    if (roi && validateRoi(roi)) {
+      drawVirtualCameraPanel(roi);
+      if (inferFrameIndex % SECOND_PASS_EVERY_N === 0) {
+        secondResult = await runVirtualCameraInference(roi);
+        if (!running || runId !== inferenceRunId || activeSession !== session) return;
+      }
+    } else {
+      secondResult = null;
+      drawVirtualCameraPanel(null);
+    }
+  } else {
+    addDebugLog('warning: no ROI available', 'warn');
+    drawVirtualCameraPanel(null);
+    secondResult = null;
+  }
+
+  updateVirtualCameraState(candidate, roi, secondResult, currentFps);
+  updateVirtualCameraUi();
+  updateRobotState(candidate, displayBoxes, guidance);
+  draw(dets, displayBoxes, xf, guidance, candidate);
 
   frameCount++;
   const now = performance.now();
   if (now - lastTs >= 1000) {
     const fps = Math.round(frameCount * 1000 / (now - lastTs));
+    currentFps = fps;
     vFps.textContent = fps;
     bFps.className = `badge ${fps >= 15 ? 'good' : fps >= 7 ? 'warn' : 'err'}`;
     frameCount = 0; lastTs = now;
   }
 
   detCount.textContent = displayBoxes.length
-    ? `💩 穩定目標 ${displayBoxes.length} 個 · 最高 ${(smoothedConf * 100).toFixed(0)}% · ${guidance.action}`
-    : '未偵測到便便';
+    ? `💩 ${robotState} · 目標 ${displayBoxes.length} 個 · 最高 ${(smoothedConf * 100).toFixed(0)}%${guidance ? ` · ${guidance.action}` : ''}`
+    : `${robotState} · 未偵測到便便`;
 
   requestAnimationFrame(() => inferLoop(runId));
 }

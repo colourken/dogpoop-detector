@@ -64,6 +64,11 @@
     .badge.warn span { color: #fa0; }
     .badge.err  span { color: #f44; }
 
+    .mini-btn {
+      cursor: pointer;
+      font: inherit;
+    }
+
     #model-select,
     #search-zoom-select {
       background: #1e1e1e;
@@ -360,6 +365,7 @@
     <div class="badge">Haptic Supported <span id="v-haptic-supported">—</span></div>
     <label class="badge toggle">Sound <input id="sound-toggle" type="checkbox" checked><span id="v-sound">ON</span></label>
     <div class="badge">Sound Ready <span id="v-sound-ready">NO</span></div>
+    <button class="badge mini-btn" id="test-sound-btn" type="button">Test Sound</button>
     <div class="badge">
       Model
       <select id="model-select">
@@ -488,6 +494,7 @@ const debugToggle = document.getElementById('debug-toggle');
 const roiPanelToggle = document.getElementById('roi-panel-toggle');
 const hapticToggle = document.getElementById('haptic-toggle');
 const soundToggle = document.getElementById('sound-toggle');
+const testSoundBtn = document.getElementById('test-sound-btn');
 const searchZoomSelect = document.getElementById('search-zoom-select');
 const vPowerSave = document.getElementById('v-power-save');
 const vDebugToggle = document.getElementById('v-debug-toggle');
@@ -1278,7 +1285,7 @@ async function unlockSoundAlert() {
   }
 }
 
-async function triggerSoundAlert() {
+async function triggerSoundAlert(source = 'confirmed') {
   if (!soundEnabled) return;
   try {
     soundReady = !!soundCtx && soundCtx.state === 'running';
@@ -1294,18 +1301,18 @@ async function triggerSoundAlert() {
     const now = soundCtx.currentTime;
     const gain = soundCtx.createGain();
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    gain.gain.exponentialRampToValueAtTime(0.18, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
     gain.connect(soundCtx.destination);
 
     const osc = soundCtx.createOscillator();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(1046.5, now);
-    osc.frequency.setValueAtTime(1318.5, now + 0.11);
+    osc.frequency.setValueAtTime(1318.5, now + 0.16);
     osc.connect(gain);
     osc.start(now);
-    osc.stop(now + 0.24);
-    addDebugLog('sound alert triggered');
+    osc.stop(now + 0.34);
+    addDebugLog(source === 'test' ? 'sound test triggered' : 'sound alert triggered');
   } catch (e) {
     addDebugLog(`warning: sound alert failed: ${e.message}`, 'warn');
   }
@@ -1936,6 +1943,16 @@ if (soundToggle) {
   soundToggle.addEventListener('change', () => setSoundEnabled(soundToggle.checked));
 } else {
   addDebugLog('warning: Sound toggle missing', 'warn');
+}
+
+if (testSoundBtn) {
+  testSoundBtn.addEventListener('click', async () => {
+    addDebugLog('sound test requested');
+    await unlockSoundAlert();
+    await triggerSoundAlert('test');
+  });
+} else {
+  addDebugLog('warning: Test Sound button missing', 'warn');
 }
 
 if (searchZoomSelect) {

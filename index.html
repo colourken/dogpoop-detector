@@ -358,6 +358,8 @@
     <label class="badge toggle">ROI <input id="roi-panel-toggle" type="checkbox"><span id="v-roi-toggle">OFF</span></label>
     <label class="badge toggle">Haptic <input id="haptic-toggle" type="checkbox" checked><span id="v-haptic">ON</span></label>
     <div class="badge">Haptic Supported <span id="v-haptic-supported">—</span></div>
+    <label class="badge toggle">Sound <input id="sound-toggle" type="checkbox" checked><span id="v-sound">ON</span></label>
+    <div class="badge">Sound Ready <span id="v-sound-ready">NO</span></div>
     <div class="badge">
       Model
       <select id="model-select">
@@ -485,12 +487,15 @@ const powerSaveToggle = document.getElementById('power-save-toggle');
 const debugToggle = document.getElementById('debug-toggle');
 const roiPanelToggle = document.getElementById('roi-panel-toggle');
 const hapticToggle = document.getElementById('haptic-toggle');
+const soundToggle = document.getElementById('sound-toggle');
 const searchZoomSelect = document.getElementById('search-zoom-select');
 const vPowerSave = document.getElementById('v-power-save');
 const vDebugToggle = document.getElementById('v-debug-toggle');
 const vRoiToggle = document.getElementById('v-roi-toggle');
 const vHaptic = document.getElementById('v-haptic');
 const vHapticSupported = document.getElementById('v-haptic-supported');
+const vSound = document.getElementById('v-sound');
+const vSoundReady = document.getElementById('v-sound-ready');
 const vSearchZoom = document.getElementById('v-search-zoom');
 const vcamPanel = document.getElementById('vcam-panel');
 const modelSel  = document.getElementById('model-select');
@@ -1175,12 +1180,15 @@ function updatePowerSaveUi() {
   if (vRoiToggle) vRoiToggle.textContent = roiPanelEnabled ? 'ON' : 'OFF';
   if (vHaptic) vHaptic.textContent = hapticEnabled ? 'ON' : 'OFF';
   if (vHapticSupported) vHapticSupported.textContent = hapticSupported ? 'YES' : 'NO';
+  if (vSound) vSound.textContent = soundEnabled ? 'ON' : 'OFF';
+  if (vSoundReady) vSoundReady.textContent = soundReady ? 'YES' : 'NO';
   if (vSearchZoom) vSearchZoom.textContent = formatSearchZoomLabel(searchZoom);
   if (vVcamInterval) vVcamInterval.textContent = `every ${secondPassEveryN}f`;
   if (powerSaveToggle) powerSaveToggle.checked = powerSaveEnabled;
   if (debugToggle) debugToggle.checked = debugLogEnabled;
   if (roiPanelToggle) roiPanelToggle.checked = roiPanelEnabled;
   if (hapticToggle) hapticToggle.checked = hapticEnabled;
+  if (soundToggle) soundToggle.checked = soundEnabled;
   if (searchZoomSelect) searchZoomSelect.value = String(searchZoom);
   if (vcamPanel) vcamPanel.classList.toggle('roi-preview-off', !roiPanelEnabled);
   if (debugLogEnabled) renderDebugLog();
@@ -1223,6 +1231,84 @@ function setHapticEnabled(enabled) {
   updatePowerSaveUi();
   addDebugLog(hapticEnabled ? 'haptic alert enabled' : 'haptic alert disabled');
   if (hapticEnabled && !hapticSupported) addDebugLog('warning: Haptic ON unsupported', 'warn');
+}
+
+function setSoundEnabled(enabled) {
+  soundEnabled = !!enabled;
+  updatePowerSaveUi();
+  addDebugLog(soundEnabled ? 'sound alert enabled' : 'sound alert disabled');
+}
+
+function getAudioContextCtor() {
+  return window.AudioContext || window.webkitAudioContext || null;
+}
+
+async function unlockSoundAlert() {
+  if (!soundEnabled) {
+    addDebugLog('sound alert unlock skipped, sound disabled');
+    return false;
+  }
+  const AudioContextCtor = getAudioContextCtor();
+  if (!AudioContextCtor) {
+    addDebugLog('warning: Web Audio unsupported', 'warn');
+    soundReady = false;
+    updatePowerSaveUi();
+    return false;
+  }
+  try {
+    if (!soundCtx) soundCtx = new AudioContextCtor();
+    if (soundCtx.state === 'suspended' || soundCtx.state === 'interrupted') await soundCtx.resume();
+    const gain = soundCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, soundCtx.currentTime);
+    gain.connect(soundCtx.destination);
+    const osc = soundCtx.createOscillator();
+    osc.frequency.setValueAtTime(880, soundCtx.currentTime);
+    osc.connect(gain);
+    osc.start();
+    osc.stop(soundCtx.currentTime + 0.015);
+    soundReady = soundCtx.state === 'running';
+    updatePowerSaveUi();
+    addDebugLog(soundReady ? 'sound alert unlocked' : 'warning: sound alert not ready', soundReady ? 'info' : 'warn');
+    return soundReady;
+  } catch (e) {
+    soundReady = false;
+    updatePowerSaveUi();
+    addDebugLog(`warning: sound unlock failed: ${e.message}`, 'warn');
+    return false;
+  }
+}
+
+async function triggerSoundAlert() {
+  if (!soundEnabled) return;
+  try {
+    soundReady = !!soundCtx && soundCtx.state === 'running';
+    updatePowerSaveUi();
+    if (!soundCtx || soundCtx.state !== 'running') {
+      const ok = await unlockSoundAlert();
+      if (!ok) {
+        addDebugLog('warning: sound alert blocked until user taps Start', 'warn');
+        return;
+      }
+    }
+
+    const now = soundCtx.currentTime;
+    const gain = soundCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    gain.connect(soundCtx.destination);
+
+    const osc = soundCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1046.5, now);
+    osc.frequency.setValueAtTime(1318.5, now + 0.11);
+    osc.connect(gain);
+    osc.start(now);
+    osc.stop(now + 0.24);
+    addDebugLog('sound alert triggered');
+  } catch (e) {
+    addDebugLog(`warning: sound alert failed: ${e.message}`, 'warn');
+  }
 }
 
 function setSearchZoom(value) {
@@ -1270,6 +1356,7 @@ function setStateBanner(state) {
       : '#dff6ff';
   if (previousState !== 'CONFIRMED_POOP' && state === 'CONFIRMED_POOP') {
     triggerHapticAlert();
+    triggerSoundAlert();
   }
   lastRobotState = state;
 }
@@ -1649,6 +1736,9 @@ let debugLogEnabled = false;
 let roiPanelEnabled = false;
 let hapticEnabled = true;
 let hapticSupported = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+let soundEnabled = true;
+let soundReady = false;
+let soundCtx = null;
 let searchZoom = 2;
 let secondPassEveryN = 8;
 let mainFrameSkip = 2;
@@ -1842,6 +1932,12 @@ if (hapticToggle) {
   addDebugLog('warning: Haptic toggle missing', 'warn');
 }
 
+if (soundToggle) {
+  soundToggle.addEventListener('change', () => setSoundEnabled(soundToggle.checked));
+} else {
+  addDebugLog('warning: Sound toggle missing', 'warn');
+}
+
 if (searchZoomSelect) {
   searchZoomSelect.addEventListener('change', () => setSearchZoom(searchZoomSelect.value));
 } else {
@@ -1858,6 +1954,7 @@ startBtn.addEventListener('click', async () => {
   startBtn.disabled = true;
   startBtn.textContent = '載入中…';
   try {
+    await unlockSoundAlert();
     currentModelKey = modelSel.value;
     currentModelUrl = MODELS[currentModelKey].url;
     await startCamera();

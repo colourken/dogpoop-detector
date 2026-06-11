@@ -1,0 +1,2394 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="application-name" content="DogPoopAI" />
+  <meta name="author" content="Samlyn Robotics Ltd." />
+  <meta name="copyright" content="© 2026 Samlyn Robotics Ltd. All rights reserved." />
+  <meta name="build" content="v8-candidate-comparison-recorder-2026-06-11" />
+  <meta name="rights" content="Unauthorized copying, redistribution, or commercial use is prohibited." />
+  <title>💩 Dog Poop AI Detector</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0a;
+      color: #e0e0e0;
+      font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      width: 100%;
+      padding: 12px 16px 8px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid #222;
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #fff;
+    }
+
+    #status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 8px 0;
+      font-size: 0.68rem;
+    }
+
+    .badge {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 2px 8px;
+      color: #aaa;
+      white-space: nowrap;
+    }
+
+    .badge span { color: #5bf; }
+    .badge.good span { color: #4c4; }
+    .badge.warn span { color: #fa0; }
+    .badge.err  span { color: #f44; }
+
+    .mini-btn {
+      cursor: pointer;
+      font: inherit;
+    }
+
+    #model-select,
+    #search-zoom-select {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #5bf;
+      font-size: 0.68rem;
+      padding: 1px 4px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .toggle input {
+      width: 13px;
+      height: 13px;
+      accent-color: #55bbff;
+    }
+
+    #viewport {
+      position: relative;
+      width: 100%;
+      max-width: 600px;
+      margin-top: 12px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #111;
+      aspect-ratio: 4/3;
+    }
+
+    .view-label {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      background: rgba(0,0,0,0.62);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 6px;
+      padding: 4px 9px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #e8f6ff;
+      z-index: 2;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    #canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    #overlay-msg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: rgba(0,0,0,0.75);
+      font-size: 0.9rem;
+      color: #ccc;
+      text-align: center;
+      padding: 20px;
+    }
+
+    #overlay-msg .icon { font-size: 2.5rem; }
+
+    #start-btn {
+      background: linear-gradient(135deg, #55bbff, #338899);
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 12px 32px;
+      cursor: pointer;
+      margin-top: 8px;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #start-btn:active { opacity: 0.8; }
+    #start-btn:disabled { opacity: 0.5; cursor: default; }
+
+    #state-banner {
+      position: absolute;
+      top: 10px;
+      left: 12px;
+      background: rgba(0,0,0,0.62);
+      border: 1px solid rgba(85,187,255,0.4);
+      border-radius: 6px;
+      padding: 4px 9px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #dff6ff;
+      z-index: 2;
+    }
+
+    #det-count {
+      position: absolute;
+      bottom: 10px;
+      right: 12px;
+      background: rgba(0,0,0,0.55);
+      border-radius: 8px;
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      color: #eee;
+    }
+
+    #telemetry {
+      width: 100%;
+      max-width: 600px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+      margin-top: 10px;
+      padding: 0 8px;
+    }
+
+    #search-zoom-view {
+      position: relative;
+      width: 100%;
+      max-width: 600px;
+      margin-top: 10px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #090909;
+      border: 1px solid #252525;
+      aspect-ratio: 4/2;
+    }
+
+    #search-zoom-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #050505;
+    }
+
+    .panel {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .panel h2 {
+      font-size: 0.78rem;
+      line-height: 1.2;
+      padding: 8px 10px;
+      color: #fff;
+      border-bottom: 1px solid #242424;
+    }
+
+    #vcam-body {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 10px;
+      padding: 10px;
+      align-items: start;
+    }
+
+    #roi-canvas {
+      width: 220px;
+      height: 220px;
+      background: #050505;
+      border: 1px solid #333;
+      border-radius: 6px;
+      display: block;
+      aspect-ratio: 1 / 1;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      font-size: 0.68rem;
+    }
+
+    .metric {
+      background: #181818;
+      border: 1px solid #292929;
+      border-radius: 6px;
+      padding: 5px 7px;
+      min-width: 0;
+    }
+
+    .metric b {
+      display: block;
+      color: #777;
+      font-size: 0.6rem;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .metric span {
+      color: #dcecff;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    #debug-log {
+      list-style: none;
+      max-height: 128px;
+      overflow: auto;
+      padding: 8px 10px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.62rem;
+      line-height: 1.35;
+      color: #9fb3c8;
+    }
+
+    #debug-log li.warn { color: #ffcc66; }
+    #debug-log li.err { color: #ff7777; }
+
+    #vcam-panel.roi-preview-off #roi-canvas {
+      display: none;
+    }
+
+    #test-record-body {
+      padding: 10px;
+    }
+
+    .test-form {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .test-field {
+      display: grid;
+      gap: 4px;
+      color: #888;
+      font-size: 0.65rem;
+      min-width: 0;
+    }
+
+    .test-field.wide {
+      grid-column: 1 / -1;
+    }
+
+    .test-field input,
+    .test-field select {
+      width: 100%;
+      min-width: 0;
+      background: #181818;
+      color: #e8f3fa;
+      border: 1px solid #333;
+      border-radius: 5px;
+      padding: 8px;
+      font: inherit;
+    }
+
+    .test-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 9px;
+    }
+
+    .test-action {
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      padding: 8px 11px;
+      background: #1c1c1c;
+      color: #dcecff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .test-action.primary {
+      background: #17658a;
+      border-color: #2687b4;
+      color: #fff;
+    }
+
+    .test-action.danger {
+      color: #ff9999;
+    }
+
+    #test-record-status {
+      margin-top: 8px;
+      color: #8ba7b8;
+      font-size: 0.65rem;
+      line-height: 1.4;
+    }
+
+    #test-table-wrap {
+      margin-top: 9px;
+      overflow-x: auto;
+      border: 1px solid #292929;
+      border-radius: 6px;
+    }
+
+    #test-record-table {
+      width: 100%;
+      min-width: 720px;
+      border-collapse: collapse;
+      font-size: 0.61rem;
+    }
+
+    #test-record-table th,
+    #test-record-table td {
+      border-bottom: 1px solid #252525;
+      padding: 6px 7px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    #test-record-table th {
+      color: #8096a6;
+      background: #171717;
+    }
+
+    #test-record-table td {
+      color: #d4e0e8;
+    }
+
+    @media (max-width: 499px) {
+      #vcam-body {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      #roi-canvas {
+        width: min(100%, 180px);
+        height: auto;
+        justify-self: center;
+      }
+
+      #search-zoom-view {
+        width: calc(100% - 16px);
+      }
+
+      .test-form {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .test-field.wide {
+        grid-column: auto;
+      }
+    }
+
+    footer {
+      margin: 16px 0 24px;
+      font-size: 0.65rem;
+      color: #444;
+      text-align: center;
+      line-height: 1.45;
+      padding: 0 16px;
+    }
+
+    footer strong {
+      color: #777;
+      font-weight: 600;
+    }
+
+    footer .rights {
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>💩 Dog Poop AI Detector</h1>
+  <div id="status-bar">
+    <div class="badge" id="b-fps">FPS <span id="v-fps">—</span></div>
+    <div class="badge" id="b-backend">Backend <span id="v-backend">—</span></div>
+    <div class="badge">imgsz <span>320</span></div>
+    <div class="badge">Build <span>v8-compare-r1</span></div>
+    <div class="badge">Top Raw <span id="v-top-raw">0%</span></div>
+    <div class="badge">Area <span id="v-top-area">—</span></div>
+    <div class="badge">
+      Search Zoom
+      <select id="search-zoom-select">
+        <option value="1">1x</option>
+        <option value="2" selected>2x</option>
+        <option value="3">3x</option>
+        <option value="5">5x Experimental</option>
+      </select>
+    </div>
+    <div class="badge">VCam <span id="v-vcam-interval">every 8f</span></div>
+    <label class="badge toggle">Power Save <input id="power-save-toggle" type="checkbox" checked><span id="v-power-save">ON</span></label>
+    <label class="badge toggle">Debug <input id="debug-toggle" type="checkbox"><span id="v-debug-toggle">OFF</span></label>
+    <label class="badge toggle">ROI <input id="roi-panel-toggle" type="checkbox"><span id="v-roi-toggle">OFF</span></label>
+    <label class="badge toggle">Haptic <input id="haptic-toggle" type="checkbox" checked><span id="v-haptic">ON</span></label>
+    <div class="badge">Haptic Supported <span id="v-haptic-supported">—</span></div>
+    <label class="badge toggle">Sound <input id="sound-toggle" type="checkbox" checked><span id="v-sound">ON</span></label>
+    <div class="badge">Sound Ready <span id="v-sound-ready">NO</span></div>
+    <button class="badge mini-btn" id="test-sound-btn" type="button">Test Sound</button>
+    <div class="badge">
+      Model
+      <select id="model-select">
+        <option value="v7" selected>v7 stable</option>
+        <option value="v8epoch8">v8 epoch8 candidate</option>
+      </select>
+    </div>
+    <div class="badge" id="b-model">Active <span id="v-model">—</span></div>
+    <div class="badge">Threshold <span id="v-active-threshold">30%</span></div>
+    <div class="badge" id="b-device">Device <span id="v-device">—</span></div>
+    <div class="badge" id="b-browser">Browser <span id="v-browser">—</span></div>
+  </div>
+</header>
+
+<div id="viewport">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div class="view-label">Normal View</div>
+  <div id="state-banner">SEARCHING</div>
+  <div id="overlay-msg">
+    <div class="icon">📷</div>
+    <div id="msg-text">點擊開始，開啟相機並載入 AI 模型</div>
+    <button id="start-btn">開始偵測</button>
+  </div>
+  <div id="det-count" style="display:none">偵測中…</div>
+</div>
+
+<div id="search-zoom-view">
+  <canvas id="search-zoom-canvas" width="600" height="300"></canvas>
+  <div class="view-label">Search Zoom View <span id="v-search-zoom">2x</span></div>
+</div>
+
+<section id="telemetry">
+  <div class="panel" id="vcam-panel">
+    <h2>Virtual Camera 2 — ROI Re-Detection</h2>
+    <div id="vcam-body">
+      <canvas id="roi-canvas" width="220" height="220"></canvas>
+      <div class="metric-grid">
+        <div class="metric"><b>ROI Mode</b><span id="v-roi-mode">OFF</span></div>
+        <div class="metric"><b>VCam Result</b><span id="v-vcam-result">NO ROI</span></div>
+        <div class="metric"><b>Second Raw Conf</b><span id="v-second-raw">0%</span></div>
+        <div class="metric"><b>Second Smoothed</b><span id="v-second-smooth">0%</span></div>
+        <div class="metric"><b>Confirmed Frames</b><span id="v-confirmed-frames">0</span></div>
+        <div class="metric"><b>ROI Size</b><span id="v-roi-size">—</span></div>
+        <div class="metric"><b>Main Result</b><span id="v-main-result">SEARCHING</span></div>
+        <div class="metric"><b>AI Zoom</b><span id="v-roi-zoom">OFF</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="panel" id="test-record-panel">
+    <h2>Mobile Comparison Test Records</h2>
+    <div id="test-record-body">
+      <div class="test-form">
+        <label class="test-field">
+          Distance (cm)
+          <input id="test-distance" type="number" inputmode="decimal" min="0" step="10" value="100">
+        </label>
+        <label class="test-field">
+          Ground Truth
+          <select id="test-ground-truth">
+            <option value="poop">Poop present</option>
+            <option value="no_poop">No poop</option>
+          </select>
+        </label>
+        <label class="test-field">
+          Scene ID
+          <input id="test-scene-id" type="text" maxlength="40" placeholder="e.g. garden-01">
+        </label>
+        <label class="test-field">
+          Trial
+          <input id="test-trial" type="number" inputmode="numeric" min="1" step="1" value="1">
+        </label>
+        <label class="test-field wide">
+          Notes
+          <input id="test-notes" type="text" maxlength="120" placeholder="lighting, angle, false positive type">
+        </label>
+      </div>
+      <div class="test-actions">
+        <button class="test-action primary" id="record-test-btn" type="button">Record Sample</button>
+        <button class="test-action" id="export-test-btn" type="button">Download CSV</button>
+        <button class="test-action danger" id="clear-test-btn" type="button">Clear Records</button>
+      </div>
+      <div id="test-record-status">0 records. Wait for the view to stabilize, then record one sample.</div>
+      <div id="test-table-wrap">
+        <table id="test-record-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Model</th>
+              <th>Thr</th>
+              <th>Zoom</th>
+              <th>cm</th>
+              <th>Truth</th>
+              <th>Top Raw</th>
+              <th>Candidate</th>
+              <th>VCam</th>
+              <th>Outcome</th>
+              <th>Main ms</th>
+              <th>VCam ms</th>
+              <th>FPS</th>
+            </tr>
+          </thead>
+          <tbody id="test-record-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Debug Log</h2>
+    <ul id="debug-log"></ul>
+  </div>
+</section>
+
+<footer>
+  <div><strong>DogPoopAI</strong> · v7 stable / v8 epoch8 candidate · YOLOv8n · 1-class (poop) · Build v8-candidate-comparison-recorder-2026-06-11</div>
+  <div>© 2026 Samlyn Robotics Ltd. All rights reserved.</div>
+  <div class="rights">Unauthorized copying, redistribution, or commercial use is prohibited.</div>
+</footer>
+
+<script>
+// ─── Config ───────────────────────────────────────────────────────────────────
+const MODELS = {
+  v7: {
+    url: './DogPoopAI_v7_320.onnx',
+    label: 'v7 stable @ 0.30',
+    threshold: 0.30,
+  },
+  v8epoch8: {
+    url: './dogpoopai_v8_epoch8_recall_candidate.onnx',
+    label: 'v8 epoch8 candidate @ 0.35',
+    threshold: 0.35,
+  },
+};
+let currentModelKey = 'v7';
+let currentModelUrl = MODELS[currentModelKey].url;
+
+const IMGSZ       = 320;
+let CANDIDATE_THRESH = MODELS[currentModelKey].threshold;
+let CONF_THRESH = MODELS[currentModelKey].threshold;
+const NMS_IOU     = 0.45;
+
+// ─── Display stability / anti-flicker ───────────────────────────────────────
+const DEBUG_RAW_BOXES = false;   // true = show raw per-frame detections
+const EMA_ALPHA       = 0.30;    // confidence smoothing
+const APPEAR_THRESH   = 0.50;    // show box when smoothed confidence reaches this
+const DISAPPEAR_THRESH= 0.35;    // hide box only after confidence drops below this
+const BOX_SMOOTH_N    = 5;       // moving average frames for box position
+const LOST_FRAMES     = 8;       // clear memory only after this many missing frames
+const MEMORY_MS       = 450;     // keep last box briefly during missed detections
+const MAX_TRACKS      = 6;       // max simultaneous poop candidates to display
+const TRACK_IOU_MATCH = 0.15;    // match detections to existing tracks
+const CANDIDATE_STABLE_FRAMES = 3;
+const CANDIDATE_IOU_MATCH = 0.12;
+const CANDIDATE_MEMORY_MS = 450;
+const ALIGN_THRESH    = 0.15;    // horizontal offset threshold for turn guidance
+const CLOSE_AREA_RATIO= 0.16;    // box area ratio treated as close range
+const MED_AREA_RATIO  = 0.06;    // box area ratio treated as medium range
+const ROI_SCALE       = 2.0;     // crop around candidate box
+const ROI_MIN_SIZE    = 128;     // minimum ROI size in source pixels
+const SECOND_CONFIRM_THRESH = 0.60;
+const MAIN_CONFIRM_THRESH   = 0.55;
+const CONFIRMED_FRAMES_N    = 3;
+const FPS_WARN_THRESH       = 7;
+const SEARCH_ZOOM_PREVIEW_EVERY_N_POWER_SAVE = 3;
+const TEST_RECORD_STORAGE_KEY = 'dogpoopai_mobile_comparison_records_v1';
+const MAX_TEST_RECORDS = 500;
+
+// ─── UI refs ─────────────────────────────────────────────────────────────────
+const video     = document.getElementById('video');
+const canvas    = document.getElementById('canvas');
+const ctx       = canvas.getContext('2d');
+const searchZoomCanvas = document.getElementById('search-zoom-canvas');
+const searchZoomCtx = searchZoomCanvas ? searchZoomCanvas.getContext('2d', { willReadFrequently: true }) : null;
+const overlayEl = document.getElementById('overlay-msg');
+const msgText   = document.getElementById('msg-text');
+const startBtn  = document.getElementById('start-btn');
+const detCount  = document.getElementById('det-count');
+const stateBanner = document.getElementById('state-banner');
+const roiCanvas = document.getElementById('roi-canvas');
+const roiCtx = roiCanvas ? roiCanvas.getContext('2d', { willReadFrequently: true }) : null;
+const vRoiMode = document.getElementById('v-roi-mode');
+const vVcamResult = document.getElementById('v-vcam-result');
+const vSecondRaw = document.getElementById('v-second-raw');
+const vSecondSmooth = document.getElementById('v-second-smooth');
+const vConfirmedFrames = document.getElementById('v-confirmed-frames');
+const vRoiSize = document.getElementById('v-roi-size');
+const vMainResult = document.getElementById('v-main-result');
+const vRoiZoom = document.getElementById('v-roi-zoom');
+const debugLogEl = document.getElementById('debug-log');
+const vTopRaw = document.getElementById('v-top-raw');
+const vTopArea = document.getElementById('v-top-area');
+const vVcamInterval = document.getElementById('v-vcam-interval');
+const powerSaveToggle = document.getElementById('power-save-toggle');
+const debugToggle = document.getElementById('debug-toggle');
+const roiPanelToggle = document.getElementById('roi-panel-toggle');
+const hapticToggle = document.getElementById('haptic-toggle');
+const soundToggle = document.getElementById('sound-toggle');
+const testSoundBtn = document.getElementById('test-sound-btn');
+const searchZoomSelect = document.getElementById('search-zoom-select');
+const vPowerSave = document.getElementById('v-power-save');
+const vDebugToggle = document.getElementById('v-debug-toggle');
+const vRoiToggle = document.getElementById('v-roi-toggle');
+const vHaptic = document.getElementById('v-haptic');
+const vHapticSupported = document.getElementById('v-haptic-supported');
+const vSound = document.getElementById('v-sound');
+const vSoundReady = document.getElementById('v-sound-ready');
+const vSearchZoom = document.getElementById('v-search-zoom');
+const vActiveThreshold = document.getElementById('v-active-threshold');
+const testDistance = document.getElementById('test-distance');
+const testGroundTruth = document.getElementById('test-ground-truth');
+const testSceneId = document.getElementById('test-scene-id');
+const testTrial = document.getElementById('test-trial');
+const testNotes = document.getElementById('test-notes');
+const recordTestBtn = document.getElementById('record-test-btn');
+const exportTestBtn = document.getElementById('export-test-btn');
+const clearTestBtn = document.getElementById('clear-test-btn');
+const testRecordStatus = document.getElementById('test-record-status');
+const testRecordRows = document.getElementById('test-record-rows');
+const vcamPanel = document.getElementById('vcam-panel');
+const modelSel  = document.getElementById('model-select');
+const vFps      = document.getElementById('v-fps');
+const vBackend  = document.getElementById('v-backend');
+const vModel    = document.getElementById('v-model');
+const vDevice   = document.getElementById('v-device');
+const vBrowser  = document.getElementById('v-browser');
+const bBackend  = document.getElementById('b-backend');
+const bModel    = document.getElementById('b-model');
+const bFps      = document.getElementById('b-fps');
+
+function updateActiveModelUi() {
+  const profile = MODELS[currentModelKey];
+  if (vModel) vModel.textContent = profile ? profile.label : '—';
+  if (vActiveThreshold) vActiveThreshold.textContent = `${(CANDIDATE_THRESH * 100).toFixed(0)}%`;
+  if (bModel) bModel.className = profile ? 'badge good' : 'badge err';
+}
+
+// ─── Device / Browser detection ──────────────────────────────────────────────
+(function detectEnv() {
+  const ua = navigator.userAgent;
+  let device = 'Desktop';
+  if (/iPhone/.test(ua))       device = 'iPhone';
+  else if (/iPad/.test(ua))    device = 'iPad';
+  else if (/Android/.test(ua)) {
+    const m = ua.match(/;\s*([^;)]+)\sBuild/);
+    device = m ? m[1].trim() : 'Android';
+  }
+
+  let browser = 'Browser';
+  if (/CriOS/.test(ua))                           browser = 'Chrome iOS';
+  else if (/FxiOS/.test(ua))                      browser = 'Firefox iOS';
+  else if (/EdgiOS/.test(ua))                     browser = 'Edge iOS';
+  else if (/Chrome\//.test(ua))                   browser = 'Chrome';
+  else if (/Firefox\//.test(ua))                  browser = 'Firefox';
+  else if (/Edg\//.test(ua))                      browser = 'Edge';
+  else if (/Safari\//.test(ua) && /Version\//.test(ua)) browser = 'Safari';
+
+  vDevice.textContent  = device;
+  vBrowser.textContent = browser;
+})();
+
+// ─── Load ONNX Runtime from CDN ───────────────────────────────────────────────
+// v1.21.0: fixes WebGPU adapter.requestAdapterInfo → adapter.info (Chrome 121+)
+const ORT_VERSION = '1.21.0';
+const ORT_CDN     = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+// ─── Model init (WebGPU → WASM fallback) ─────────────────────────────────────
+let session = null;
+
+async function initModel() {
+  setMsg('載入 ONNX Runtime…');
+  if (typeof ort === 'undefined') {
+    await loadScript(ORT_CDN + 'ort.all.min.js');
+  }
+
+  // Always use single-threaded WASM — avoids crossOriginIsolated requirement
+  // (GitHub Pages cannot set COOP/COEP headers; multi-thread needs SharedArrayBuffer)
+  ort.env.wasm.numThreads = 1;
+  ort.env.wasm.wasmPaths  = ORT_CDN;
+
+  for (const ep of ['webgpu', 'wasm']) {
+    try {
+      setMsg(`嘗試 ${ep.toUpperCase()} 後端…`);
+      // WebGPU: check support before trying (avoids cryptic errors on unsupported browsers)
+      if (ep === 'webgpu' && !navigator.gpu) {
+        console.info('[webgpu] navigator.gpu not available, skipping');
+        continue;
+      }
+      session = await ort.InferenceSession.create(currentModelUrl, {
+        executionProviders: [ep],
+        graphOptimizationLevel: 'all',
+      });
+      const label = ep.toUpperCase();
+      vBackend.textContent = label;
+      bBackend.className = `badge ${ep === 'webgpu' ? 'good' : 'warn'}`;
+      break;
+    } catch(e) {
+      console.warn(`[${ep}] failed:`, e.message);
+      session = null;
+    }
+  }
+
+  if (!session) throw new Error('無法載入模型，請使用 Chrome 或 Safari 並允許相機權限。');
+
+  updateActiveModelUi();
+  console.log('[ModelLoaded]', currentModelKey, currentModelUrl);
+
+  // Warm-up
+  setMsg('模型暖機中…');
+  const dummy = new ort.Tensor('float32', new Float32Array(1 * 3 * IMGSZ * IMGSZ), [1, 3, IMGSZ, IMGSZ]);
+  await session.run({ images: dummy });
+}
+
+// ─── Camera ──────────────────────────────────────────────────────────────────
+async function startCamera() {
+  setMsg('請求相機權限…');
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(track => track.stop());
+    video.srcObject = null;
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false,
+  });
+  video.srcObject = stream;
+  await new Promise(r => { video.onloadedmetadata = r; });
+  await video.play();
+}
+
+// ─── Preprocessing ────────────────────────────────────────────────────────────
+const offscreen = document.createElement('canvas');
+offscreen.width = offscreen.height = IMGSZ;
+const offCtx = offscreen.getContext('2d', { willReadFrequently: true });
+const roiOffscreen = document.createElement('canvas');
+roiOffscreen.width = roiOffscreen.height = IMGSZ;
+const roiOffCtx = roiOffscreen.getContext('2d', { willReadFrequently: true });
+let lastPreprocess = {
+  scale: 1,
+  padX: 0,
+  padY: 0,
+  srcW: IMGSZ,
+  srcH: IMGSZ,
+  cropX: 0,
+  cropY: 0,
+  cropW: IMGSZ,
+  cropH: IMGSZ,
+  searchZoom: 2,
+};
+
+function validateSearchZoom(value) {
+  const zoom = Number(value);
+  if ([1, 2, 3, 5].includes(zoom)) return zoom;
+  addDebugLog('warning: invalid Search Zoom value, fallback to 2x', 'warn');
+  return 2;
+}
+
+function createSearchZoomCrop(srcW, srcH) {
+  const zoom = validateSearchZoom(searchZoom);
+  if (![srcW, srcH].every(Number.isFinite) || srcW <= 0 || srcH <= 0) {
+    addDebugLog('warning: invalid video size for Search Zoom crop', 'warn');
+    return { cropX: 0, cropY: 0, cropW: IMGSZ, cropH: IMGSZ, searchZoom: zoom };
+  }
+
+  const cropW = srcW / zoom;
+  const cropH = srcH / zoom;
+  const cropX = (srcW - cropW) / 2;
+  const cropY = (srcH - cropH) / 2;
+  const crop = { cropX, cropY, cropW, cropH, searchZoom: zoom };
+  if (![cropX, cropY, cropW, cropH].every(Number.isFinite) || cropW <= 0 || cropH <= 0) {
+    addDebugLog('warning: Search Zoom crop invalid', 'warn');
+    return { cropX: 0, cropY: 0, cropW: srcW, cropH: srcH, searchZoom: zoom };
+  }
+  if (cropX < 0 || cropY < 0 || cropX + cropW > srcW + 0.01 || cropY + cropH > srcH + 0.01) {
+    addDebugLog('warning: Search Zoom crop out of bounds', 'warn');
+  }
+  const now = performance.now();
+  if (zoom > 1 && now - lastSearchZoomCropActiveLogAt > 1000) {
+    lastSearchZoomCropActiveLogAt = now;
+    addDebugLog('Search Zoom crop active');
+  }
+  return crop;
+}
+
+function drawContainedVideoCrop(targetCanvas, targetCtx, prep) {
+  if (!targetCanvas || !targetCtx) {
+    addDebugLog('warning: Search Zoom canvas missing', 'warn');
+    return false;
+  }
+  if (!prep || ![prep.cropX, prep.cropY, prep.cropW, prep.cropH].every(Number.isFinite) || prep.cropW <= 0 || prep.cropH <= 0) {
+    addDebugLog('warning: invalid Search Zoom crop for preview', 'warn');
+    return false;
+  }
+  if (!Number.isFinite(video.videoWidth) || !Number.isFinite(video.videoHeight) || video.videoWidth <= 0 || video.videoHeight <= 0) {
+    addDebugLog('warning: invalid video size for Search Zoom View', 'warn');
+    return false;
+  }
+
+  targetCtx.fillStyle = '#050505';
+  targetCtx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
+  const scale = Math.min(targetCanvas.width / prep.cropW, targetCanvas.height / prep.cropH);
+  const drawW = prep.cropW * scale;
+  const drawH = prep.cropH * scale;
+  const dx = (targetCanvas.width - drawW) / 2;
+  const dy = (targetCanvas.height - drawH) / 2;
+  targetCtx.drawImage(video, prep.cropX, prep.cropY, prep.cropW, prep.cropH, dx, dy, drawW, drawH);
+  targetCtx.strokeStyle = 'rgba(85,187,255,0.75)';
+  targetCtx.lineWidth = 2;
+  targetCtx.strokeRect(dx + 1, dy + 1, drawW - 2, drawH - 2);
+  return true;
+}
+
+function renderSearchZoomView(prep) {
+  const shouldThrottle = powerSaveEnabled && inferFrameIndex % SEARCH_ZOOM_PREVIEW_EVERY_N_POWER_SAVE !== 0;
+  if (shouldThrottle) {
+    const now = performance.now();
+    if (now - lastSearchZoomPreviewThrottleLogAt > 1000) {
+      lastSearchZoomPreviewThrottleLogAt = now;
+      addDebugLog('Search Zoom preview throttled for power save');
+    }
+    if (vSearchZoom) vSearchZoom.textContent = formatSearchZoomLabel((prep && prep.searchZoom) || searchZoom);
+    return;
+  }
+  if (lastSearchZoomPreviewFrame === inferFrameIndex) return;
+  lastSearchZoomPreviewFrame = inferFrameIndex;
+  const ok = drawContainedVideoCrop(searchZoomCanvas, searchZoomCtx, prep);
+  if (ok) {
+    const now = performance.now();
+    if (now - lastSearchZoomViewUpdatedLogAt > 1000) {
+      lastSearchZoomViewUpdatedLogAt = now;
+      addDebugLog('Search Zoom View updated');
+    }
+  }
+  if (vSearchZoom) vSearchZoom.textContent = formatSearchZoomLabel((prep && prep.searchZoom) || searchZoom);
+}
+
+function preprocess() {
+  const srcW = video.videoWidth || IMGSZ;
+  const srcH = video.videoHeight || IMGSZ;
+  const crop = createSearchZoomCrop(srcW, srcH);
+  const { cropX, cropY, cropW, cropH } = crop;
+  const scale = Math.min(IMGSZ / cropW, IMGSZ / cropH);
+  const drawW = cropW * scale;
+  const drawH = cropH * scale;
+  const padX = (IMGSZ - drawW) / 2;
+  const padY = (IMGSZ - drawH) / 2;
+
+  offCtx.fillStyle = 'rgb(114,114,114)';
+  offCtx.fillRect(0, 0, IMGSZ, IMGSZ);
+  offCtx.drawImage(video, cropX, cropY, cropW, cropH, padX, padY, drawW, drawH);
+  lastPreprocess = { scale, padX, padY, srcW, srcH, ...crop };
+  renderSearchZoomView(lastPreprocess);
+
+  const { data } = offCtx.getImageData(0, 0, IMGSZ, IMGSZ);
+  const n = IMGSZ * IMGSZ;
+  const f = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) {
+    f[i]         = data[i * 4]     / 255;
+    f[n + i]     = data[i * 4 + 1] / 255;
+    f[2 * n + i] = data[i * 4 + 2] / 255;
+  }
+  return new ort.Tensor('float32', f, [1, 3, IMGSZ, IMGSZ]);
+}
+
+function tensorFromRoi(roi) {
+  roiOffCtx.fillStyle = 'rgb(114,114,114)';
+  roiOffCtx.fillRect(0, 0, IMGSZ, IMGSZ);
+  roiOffCtx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, IMGSZ, IMGSZ);
+
+  const { data } = roiOffCtx.getImageData(0, 0, IMGSZ, IMGSZ);
+  const n = IMGSZ * IMGSZ;
+  const f = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) {
+    f[i]         = data[i * 4]     / 255;
+    f[n + i]     = data[i * 4 + 1] / 255;
+    f[2 * n + i] = data[i * 4 + 2] / 255;
+  }
+  return new ort.Tensor('float32', f, [1, 3, IMGSZ, IMGSZ]);
+}
+
+// ─── Postprocessing ───────────────────────────────────────────────────────────
+// Output shape: [1, 5, 2100]  →  rows = x_c, y_c, w, h, conf  (coords in 0..IMGSZ)
+function postprocess(tensor, prep) {
+  const d = tensor.data;
+  const N = tensor.dims[2]; // 2100
+  const raw = [];
+  const { scale, padX, padY, srcW, srcH } = prep;
+  const cropX = Number.isFinite(prep.cropX) ? prep.cropX : 0;
+  const cropY = Number.isFinite(prep.cropY) ? prep.cropY : 0;
+
+  for (let i = 0; i < N; i++) {
+    const conf = d[4 * N + i];
+    if (conf < CANDIDATE_THRESH) continue;
+    const xc = d[0 * N + i];
+    const yc = d[1 * N + i];
+    const bw = d[2 * N + i];
+    const bh = d[3 * N + i];
+    const x1 = Math.max(0, cropX + (xc - bw / 2 - padX) / scale);
+    const y1 = Math.max(0, cropY + (yc - bh / 2 - padY) / scale);
+    const x2 = Math.min(srcW, cropX + (xc + bw / 2 - padX) / scale);
+    const y2 = Math.min(srcH, cropY + (yc + bh / 2 - padY) / scale);
+    if (x2 <= x1 || y2 <= y1) continue;
+    if (![x1, y1, x2, y2].every(Number.isFinite)) {
+      addDebugLog('warning: Search Zoom crop mapping invalid', 'warn');
+      continue;
+    }
+    if (prep.searchZoom > 1) {
+      const now = performance.now();
+      if (now - lastSearchZoomMappingLogAt > 1000) {
+        lastSearchZoomMappingLogAt = now;
+        addDebugLog('Search Zoom crop mapped back to original video coordinates');
+      }
+    }
+    raw.push({
+      x1: x1 / srcW,
+      y1: y1 / srcH,
+      x2: x2 / srcW,
+      y2: y2 / srcH,
+      conf,
+    });
+  }
+
+  raw.sort((a, b) => b.conf - a.conf);
+  const kept = [], used = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) {
+    if (used[i]) continue;
+    kept.push(raw[i]);
+    for (let j = i + 1; j < raw.length; j++)
+      if (!used[j] && iou(raw[i], raw[j]) > NMS_IOU) used[j] = 1;
+  }
+
+  return kept.map(b => ({
+    x: b.x1 * srcW, y: b.y1 * srcH,
+    w: (b.x2 - b.x1) * srcW,
+    h: (b.y2 - b.y1) * srcH,
+    conf: b.conf,
+  }));
+}
+
+function iou(a, b) {
+  const ix1 = Math.max(a.x1, b.x1), iy1 = Math.max(a.y1, b.y1);
+  const ix2 = Math.min(a.x2, b.x2), iy2 = Math.min(a.y2, b.y2);
+  const inter = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
+  if (!inter) return 0;
+  return inter / ((a.x2-a.x1)*(a.y2-a.y1) + (b.x2-b.x1)*(b.y2-b.y1) - inter);
+}
+
+function addDebugLog(message, level = 'info') {
+  // Debug log must be throttled or only logged on state changes.
+  const now = performance.now();
+  if (message === lastDebugMessage && now - lastDebugAt < 1000) return;
+  lastDebugMessage = message;
+  lastDebugAt = now;
+  if (level === 'warn') console.warn('[DogPoopAI]', message);
+  if (level === 'err') console.error('[DogPoopAI]', message);
+  const ts = new Date().toLocaleTimeString([], { hour12: false });
+  debugLogs.unshift({ message: `[${ts}] ${message}`, level });
+  debugLogs = debugLogs.slice(0, 20);
+  if (!debugLogEnabled || !debugLogEl) return;
+  renderDebugLog();
+}
+
+function isValidBox(box) {
+  return box && ['x', 'y', 'w', 'h'].every(key => Number.isFinite(box[key])) && box.w > 0 && box.h > 0;
+}
+
+function updateTopRawDebug(tensor, prep) {
+  if (!tensor || !tensor.data || !tensor.dims) {
+    addDebugLog('warning: top raw tensor missing', 'warn');
+    topRawConf = 0;
+    topRawAreaPercent = null;
+    return;
+  }
+
+  const d = tensor.data;
+  const N = tensor.dims[2];
+  if (!Number.isFinite(N) || N <= 0) {
+    addDebugLog('warning: top raw tensor dims invalid', 'warn');
+    topRawConf = 0;
+    topRawAreaPercent = null;
+    return;
+  }
+
+  let bestIdx = -1;
+  let bestConf = 0;
+  for (let i = 0; i < N; i++) {
+    const conf = d[4 * N + i];
+    if (Number.isFinite(conf) && conf > bestConf) {
+      bestConf = conf;
+      bestIdx = i;
+    }
+  }
+
+  topRawConf = Number.isFinite(bestConf) ? bestConf : 0;
+  topRawAreaPercent = null;
+  if (!Number.isFinite(topRawConf)) {
+    addDebugLog('warning: top raw confidence is not finite', 'warn');
+    topRawConf = 0;
+  }
+
+  if (bestIdx >= 0 && prep && Number.isFinite(prep.scale) && prep.scale > 0) {
+    const { scale, padX, padY, srcW, srcH } = prep;
+    const cropX = Number.isFinite(prep.cropX) ? prep.cropX : 0;
+    const cropY = Number.isFinite(prep.cropY) ? prep.cropY : 0;
+    const xc = d[0 * N + bestIdx];
+    const yc = d[1 * N + bestIdx];
+    const bw = d[2 * N + bestIdx];
+    const bh = d[3 * N + bestIdx];
+    if ([xc, yc, bw, bh, srcW, srcH].every(Number.isFinite) && srcW > 0 && srcH > 0) {
+      const x1 = Math.max(0, cropX + (xc - bw / 2 - padX) / scale);
+      const y1 = Math.max(0, cropY + (yc - bh / 2 - padY) / scale);
+      const x2 = Math.min(srcW, cropX + (xc + bw / 2 - padX) / scale);
+      const y2 = Math.min(srcH, cropY + (yc + bh / 2 - padY) / scale);
+      const area = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+      topRawAreaPercent = area > 0 ? area / (srcW * srcH) * 100 : null;
+      if (topRawAreaPercent !== null && !Number.isFinite(topRawAreaPercent)) {
+        addDebugLog('warning: top raw area is not finite', 'warn');
+        topRawAreaPercent = null;
+      }
+    } else {
+      addDebugLog('warning: top raw box values invalid', 'warn');
+    }
+  } else if (bestIdx >= 0) {
+    addDebugLog('warning: top raw prep invalid', 'warn');
+  }
+
+  if (vTopRaw) vTopRaw.textContent = `${(topRawConf * 100).toFixed(0)}%`;
+  if (vTopArea) vTopArea.textContent = Number.isFinite(topRawAreaPercent) ? `${topRawAreaPercent.toFixed(1)}%` : '—';
+
+  const pct = topRawConf * 100;
+  const bucket = pct >= 30 ? '30+' : pct >= 20 ? '20-30' : pct >= 10 ? '10-20' : '0-10';
+  if (bucket !== lastTopRawBucket) {
+    lastTopRawBucket = bucket;
+    addDebugLog(`Top Raw Conf updated ${pct.toFixed(0)}%`);
+  }
+}
+
+function findBestCandidate(dets) {
+  if (!dets.length) return null;
+  const candidate = dets.find(det => det.conf >= CANDIDATE_THRESH) || null;
+  if (candidate) addDebugLog(`candidate found conf=${(candidate.conf * 100).toFixed(0)}%`);
+  return candidate || null;
+}
+
+function updateCandidateStability(rawCandidate) {
+  const now = performance.now();
+
+  if (rawCandidate && isValidBox(rawCandidate)) {
+    const matched = candidateState.lastBox && rectIou(rawCandidate, candidateState.lastBox) >= CANDIDATE_IOU_MATCH;
+    if (!matched) {
+      candidateState.frames = 0;
+      candidateState.history = [];
+    }
+
+    candidateState.frames++;
+    candidateState.lastBox = rawCandidate;
+    candidateState.lastSeenTs = now;
+    candidateState.history.push(rawCandidate);
+    if (candidateState.history.length > BOX_SMOOTH_N) candidateState.history.shift();
+    candidateState.smoothedBox = averageBoxes(candidateState.history);
+  } else if (candidateState.lastSeenTs && now - candidateState.lastSeenTs > CANDIDATE_MEMORY_MS) {
+    candidateState.frames = 0;
+    candidateState.history = [];
+    candidateState.lastBox = null;
+    candidateState.smoothedBox = null;
+  }
+
+  if (candidateState.frames >= CANDIDATE_STABLE_FRAMES && candidateState.smoothedBox) {
+    return {
+      ...candidateState.smoothedBox,
+      conf: candidateState.smoothedBox.conf,
+      stableFrames: candidateState.frames,
+    };
+  }
+
+  return null;
+}
+
+function createRoiFromCandidate(candidate) {
+  if (!isValidBox(candidate)) {
+    addDebugLog('warning: no ROI available', 'warn');
+    return null;
+  }
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!Number.isFinite(vw) || !Number.isFinite(vh) || vw <= 0 || vh <= 0) {
+    addDebugLog('warning: invalid video frame size', 'warn');
+    return null;
+  }
+
+  const cx = candidate.x + candidate.w / 2;
+  const cy = candidate.y + candidate.h / 2;
+  let side = Math.max(candidate.w, candidate.h) * ROI_SCALE;
+  if (side < ROI_MIN_SIZE) {
+    side = ROI_MIN_SIZE;
+    addDebugLog('ROI too small, using minimum ROI size', 'warn');
+  }
+  side = Math.min(side, vw, vh);
+
+  let x = cx - side / 2;
+  let y = cy - side / 2;
+  let clipped = false;
+  if (x < 0) { x = 0; clipped = true; }
+  if (y < 0) { y = 0; clipped = true; }
+  if (x + side > vw) { x = vw - side; clipped = true; }
+  if (y + side > vh) { y = vh - side; clipped = true; }
+  if (clipped) addDebugLog('ROI clipped to frame boundary', 'warn');
+
+  const roi = { x, y, w: side, h: side };
+  addDebugLog(`ROI crop created ${Math.round(side)}x${Math.round(side)}`);
+  return roi;
+}
+
+function validateRoi(roi) {
+  if (!isValidBox(roi)) {
+    addDebugLog('warning: invalid ROI box', 'warn');
+    return false;
+  }
+  if (roi.w < ROI_MIN_SIZE || roi.h < ROI_MIN_SIZE) {
+    addDebugLog('warning: ROI below minimum size', 'warn');
+    return false;
+  }
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (roi.x < 0 || roi.y < 0 || roi.x + roi.w > vw || roi.y + roi.h > vh) {
+    addDebugLog('warning: ROI boundary validation failed', 'warn');
+    return false;
+  }
+  return true;
+}
+
+function calculateAiZoom(roi) {
+  if (!roi) {
+    addDebugLog('warning: AI zoom skipped, no ROI', 'warn');
+    return null;
+  }
+  if (!Number.isFinite(IMGSZ) || IMGSZ <= 0) {
+    addDebugLog('error: invalid IMGSZ for AI zoom', 'err');
+    return null;
+  }
+  if (!Number.isFinite(roi.w) || roi.w <= 0 || !Number.isFinite(roi.h) || roi.h <= 0) {
+    addDebugLog('warning: invalid ROI size for AI zoom', 'warn');
+    return null;
+  }
+
+  const effectiveZoom = IMGSZ / roi.w;
+  if (!Number.isFinite(effectiveZoom)) {
+    addDebugLog('warning: AI zoom is not a finite number', 'warn');
+    return null;
+  }
+  return effectiveZoom;
+}
+
+function updateAiZoomDebug(effectiveZoom) {
+  if (!Number.isFinite(effectiveZoom)) return;
+
+  const bucket = effectiveZoom < 1 ? 'below'
+    : effectiveZoom >= 1.5 ? 'good'
+      : `mid-${Math.round(effectiveZoom * 10)}`;
+  if (bucket === virtualCamera.lastAiZoomBucket) return;
+  virtualCamera.lastAiZoomBucket = bucket;
+
+  addDebugLog(`AI zoom = ${effectiveZoom.toFixed(2)}x`);
+  if (effectiveZoom < 1) {
+    addDebugLog('warning: ROI effective zoom below 1.0x', 'warn');
+    addDebugLog('ROI larger than model input, not actually zoomed', 'warn');
+  } else if (effectiveZoom >= 1.5) {
+    addDebugLog('ROI effective zoom good');
+  }
+}
+
+function validateVirtualCameraOutput(out) {
+  if (!out || typeof out !== 'object') {
+    addDebugLog('error: second output tensor missing', 'err');
+    return null;
+  }
+  const tensor = out[Object.keys(out)[0]];
+  if (!tensor || !tensor.data || !tensor.dims) {
+    addDebugLog('error: second output tensor invalid', 'err');
+    return null;
+  }
+  return tensor;
+}
+
+async function runVirtualCameraInference(roi) {
+  if (!session) {
+    addDebugLog('error: session missing before ROI inference', 'err');
+    return null;
+  }
+  if (!validateRoi(roi)) return null;
+
+  try {
+    addDebugLog('virtual camera inference started');
+    const start = performance.now();
+    const t = tensorFromRoi(roi);
+    const out = await session.run({ images: t });
+    const elapsed = performance.now() - start;
+    if (elapsed > 120) addDebugLog(`warning: second inference slow ${elapsed.toFixed(0)}ms`, 'warn');
+
+    const tensor = validateVirtualCameraOutput(out);
+    if (!tensor) return null;
+
+    const roiPrep = { scale: IMGSZ / roi.w, padX: 0, padY: 0, srcW: roi.w, srcH: roi.h };
+    const secondDets = postprocess(tensor, roiPrep);
+    const secondRawConf = secondDets.length ? Math.max(...secondDets.map(det => det.conf)) : 0;
+    if (!Number.isFinite(secondRawConf)) {
+      addDebugLog('error: second confidence is not a number', 'err');
+      return null;
+    }
+    addDebugLog(`virtual camera inference completed conf=${(secondRawConf * 100).toFixed(0)}%`);
+    return { secondRawConf, secondDets, elapsed };
+  } catch (e) {
+    addDebugLog(`error: ROI inference failed: ${e.message}`, 'err');
+    return null;
+  }
+}
+
+function drawVirtualCameraPanel(roi) {
+  if (!roiPanelEnabled) return;
+  if (!roiCanvas || !roiCtx) {
+    addDebugLog('warning: ROI preview skipped, missing canvas', 'warn');
+    return;
+  }
+  roiCtx.clearRect(0, 0, roiCanvas.width, roiCanvas.height);
+  roiCtx.fillStyle = '#050505';
+  roiCtx.fillRect(0, 0, roiCanvas.width, roiCanvas.height);
+  if (!roi || !isValidBox(roi)) {
+    addDebugLog('warning: ROI preview skipped, invalid ROI', 'warn');
+    roiCtx.fillStyle = '#777';
+    roiCtx.font = '600 14px sans-serif';
+    roiCtx.fillText('NO ROI', roiCanvas.width / 2 - 24, roiCanvas.height / 2 + 5);
+    return;
+  }
+  if (!Number.isFinite(video.videoWidth) || !Number.isFinite(video.videoHeight) || video.videoWidth <= 0 || video.videoHeight <= 0) {
+    addDebugLog('warning: ROI preview skipped, invalid video frame', 'warn');
+    return;
+  }
+  roiCtx.drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, roiCanvas.width, roiCanvas.height);
+  addDebugLog('ROI preview updated');
+}
+
+function updateVirtualCameraState(candidate, roi, secondResult, fps) {
+  const hasCandidate = !!candidate;
+  if (secondResult !== undefined) {
+    const secondRawConf = secondResult ? secondResult.secondRawConf : 0;
+    virtualCamera.secondRawConf = secondRawConf;
+    virtualCamera.secondSmoothedConf = (1 - EMA_ALPHA) * virtualCamera.secondSmoothedConf + EMA_ALPHA * secondRawConf;
+    if (secondResult) {
+      virtualCamera.lastInferenceMs = Number.isFinite(secondResult.elapsed) ? secondResult.elapsed : null;
+      addDebugLog('second pass confidence updated');
+    }
+    else if (hasCandidate) addDebugLog('warning: second pass low confidence', 'warn');
+  }
+
+  const secondConfirmed = virtualCamera.secondSmoothedConf >= SECOND_CONFIRM_THRESH;
+  if (secondConfirmed) addDebugLog('confirmed by virtual camera');
+
+  if (hasCandidate && secondConfirmed) virtualCamera.confirmedFrames++;
+  else virtualCamera.confirmedFrames = 0;
+
+  virtualCamera.roi = roi;
+  virtualCamera.aiZoom = roi ? calculateAiZoom(roi) : null;
+  updateAiZoomDebug(virtualCamera.aiZoom);
+  virtualCamera.mode = !hasCandidate ? 'OFF' : virtualCamera.confirmedFrames >= CONFIRMED_FRAMES_N ? 'CONFIRMED' : 'ACTIVE';
+  virtualCamera.result = !hasCandidate ? 'NO ROI' : virtualCamera.confirmedFrames >= CONFIRMED_FRAMES_N ? 'CONFIRMED' : 'CANDIDATE';
+  virtualCamera.mainResult = !hasCandidate ? 'SEARCHING' : smoothedConf >= MAIN_CONFIRM_THRESH ? 'TARGET_LOCKED' : 'CANDIDATE_FOUND';
+
+  if (fps > 0 && fps < FPS_WARN_THRESH) addDebugLog(`warning: low FPS ${fps}`, 'warn');
+  return virtualCamera;
+}
+
+function updateVirtualCameraUi() {
+  vRoiMode.textContent = virtualCamera.mode;
+  vVcamResult.textContent = virtualCamera.result;
+  vSecondRaw.textContent = `${(virtualCamera.secondRawConf * 100).toFixed(0)}%`;
+  vSecondSmooth.textContent = `${(virtualCamera.secondSmoothedConf * 100).toFixed(0)}%`;
+  vConfirmedFrames.textContent = virtualCamera.confirmedFrames;
+  vRoiSize.textContent = virtualCamera.roi ? `${Math.round(virtualCamera.roi.w)}x${Math.round(virtualCamera.roi.h)}` : '—';
+  vMainResult.textContent = virtualCamera.mainResult;
+  vRoiZoom.textContent = Number.isFinite(virtualCamera.aiZoom) ? `AI Zoom ${virtualCamera.aiZoom.toFixed(1)}x` : 'OFF';
+}
+
+function renderDebugLog() {
+  if (!debugLogEl || !debugLogEnabled) return;
+  debugLogEl.textContent = '';
+  for (const item of debugLogs) {
+    const li = document.createElement('li');
+    li.className = item.level;
+    li.textContent = item.message;
+    debugLogEl.appendChild(li);
+  }
+}
+
+function finiteOrNull(value) {
+  return Number.isFinite(value) ? value : null;
+}
+
+function classifyTestOutcome(groundTruth, candidate, confirmed) {
+  if (groundTruth === 'poop') {
+    if (confirmed) return 'TP_CONFIRMED';
+    if (candidate) return 'CANDIDATE_ONLY';
+    return 'MISS';
+  }
+  if (confirmed) return 'FALSE_CONFIRM';
+  if (candidate) return 'FALSE_CANDIDATE';
+  return 'CORRECT_CLEAR';
+}
+
+function loadTestRecords() {
+  try {
+    const stored = localStorage.getItem(TEST_RECORD_STORAGE_KEY);
+    comparisonRecords = stored ? JSON.parse(stored) : [];
+    if (!Array.isArray(comparisonRecords)) comparisonRecords = [];
+  } catch (e) {
+    comparisonRecords = [];
+    addDebugLog(`warning: test records unavailable: ${e.message}`, 'warn');
+  }
+  renderTestRecords();
+}
+
+function saveTestRecords() {
+  try {
+    localStorage.setItem(TEST_RECORD_STORAGE_KEY, JSON.stringify(comparisonRecords));
+  } catch (e) {
+    addDebugLog(`warning: test record save failed: ${e.message}`, 'warn');
+  }
+}
+
+function renderTestRecords() {
+  if (!testRecordRows || !testRecordStatus) return;
+  testRecordRows.textContent = '';
+  const recent = comparisonRecords.slice(-12).reverse();
+  for (const record of recent) {
+    const tr = document.createElement('tr');
+    const values = [
+      new Date(record.timestamp).toLocaleTimeString([], { hour12: false }),
+      record.modelKey,
+      `${(record.threshold * 100).toFixed(0)}%`,
+      `${record.searchZoom}x`,
+      record.distanceCm ?? '—',
+      record.groundTruth,
+      `${(record.topRawConf * 100).toFixed(0)}%`,
+      record.candidate ? 'YES' : 'NO',
+      record.confirmed ? 'CONFIRMED' : record.vcamResult,
+      record.outcome,
+      record.mainInferenceMs === null ? '—' : record.mainInferenceMs.toFixed(0),
+      record.vcamInferenceMs === null ? '—' : record.vcamInferenceMs.toFixed(0),
+      record.fps || '—',
+    ];
+    for (const value of values) {
+      const td = document.createElement('td');
+      td.textContent = String(value);
+      tr.appendChild(td);
+    }
+    testRecordRows.appendChild(tr);
+  }
+
+  const latest = comparisonRecords[comparisonRecords.length - 1];
+  testRecordStatus.textContent = latest
+    ? `${comparisonRecords.length} records saved. Latest: ${latest.modelKey} ${latest.searchZoom}x ${latest.distanceCm ?? '—'}cm → ${latest.outcome}.`
+    : '0 records. Wait for the view to stabilize, then record one sample.';
+}
+
+function recordTestSnapshot() {
+  if (!running || !session) {
+    addDebugLog('warning: start detection before recording a sample', 'warn');
+    if (testRecordStatus) testRecordStatus.textContent = 'Start detection before recording a sample.';
+    return;
+  }
+
+  const distanceValue = Number(testDistance && testDistance.value);
+  const groundTruth = testGroundTruth ? testGroundTruth.value : 'poop';
+  const candidate = virtualCamera.mainResult !== 'SEARCHING'
+    || ['CANDIDATE_FOUND', 'TARGET_LOCKED', 'CONFIRMED_POOP'].includes(robotState);
+  const confirmed = robotState === 'CONFIRMED_POOP' || virtualCamera.result === 'CONFIRMED';
+  const record = {
+    timestamp: new Date().toISOString(),
+    sceneId: testSceneId ? testSceneId.value.trim() : '',
+    trial: Math.max(1, Number(testTrial && testTrial.value) || 1),
+    notes: testNotes ? testNotes.value.trim() : '',
+    modelKey: currentModelKey,
+    modelLabel: MODELS[currentModelKey].label,
+    threshold: CANDIDATE_THRESH,
+    searchZoom,
+    distanceCm: Number.isFinite(distanceValue) && distanceValue >= 0 ? distanceValue : null,
+    groundTruth,
+    topRawConf: finiteOrNull(topRawConf) ?? 0,
+    topRawAreaPercent: finiteOrNull(topRawAreaPercent),
+    smoothedConf: finiteOrNull(smoothedConf) ?? 0,
+    candidateFrames: candidateState.frames,
+    candidate,
+    mainResult: virtualCamera.mainResult,
+    robotState,
+    vcamResult: virtualCamera.result,
+    vcamSecondRaw: finiteOrNull(virtualCamera.secondRawConf) ?? 0,
+    vcamSecondSmoothed: finiteOrNull(virtualCamera.secondSmoothedConf) ?? 0,
+    confirmedFrames: virtualCamera.confirmedFrames,
+    confirmed,
+    outcome: classifyTestOutcome(groundTruth, candidate, confirmed),
+    mainInferenceMs: finiteOrNull(lastMainInferenceMs),
+    vcamInferenceMs: finiteOrNull(virtualCamera.lastInferenceMs),
+    fps: finiteOrNull(currentFps),
+    powerSave: powerSaveEnabled,
+  };
+
+  comparisonRecords.push(record);
+  if (comparisonRecords.length > MAX_TEST_RECORDS) {
+    comparisonRecords = comparisonRecords.slice(-MAX_TEST_RECORDS);
+  }
+  saveTestRecords();
+  renderTestRecords();
+  if (testTrial) testTrial.value = String(record.trial + 1);
+  addDebugLog(`test sample recorded: ${record.modelKey} ${record.searchZoom}x ${record.outcome}`);
+}
+
+function csvCell(value) {
+  if (value === null || value === undefined) return '';
+  const text = String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function exportTestRecordsCsv() {
+  if (!comparisonRecords.length) {
+    addDebugLog('warning: no test records to export', 'warn');
+    if (testRecordStatus) testRecordStatus.textContent = 'No records to export.';
+    return;
+  }
+  const columns = [
+    'timestamp', 'sceneId', 'trial', 'notes', 'modelKey', 'modelLabel', 'threshold',
+    'searchZoom', 'distanceCm', 'groundTruth', 'topRawConf', 'topRawAreaPercent',
+    'smoothedConf', 'candidateFrames', 'candidate', 'mainResult', 'robotState',
+    'vcamResult', 'vcamSecondRaw', 'vcamSecondSmoothed', 'confirmedFrames',
+    'confirmed', 'outcome', 'mainInferenceMs', 'vcamInferenceMs', 'fps', 'powerSave',
+  ];
+  const lines = [columns.map(csvCell).join(',')];
+  for (const record of comparisonRecords) {
+    lines.push(columns.map(column => csvCell(record[column])).join(','));
+  }
+  const blob = new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `dogpoopai_mobile_comparison_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  addDebugLog(`test records exported: ${comparisonRecords.length}`);
+}
+
+function clearTestRecords() {
+  if (!comparisonRecords.length) return;
+  if (!window.confirm(`Clear all ${comparisonRecords.length} test records?`)) return;
+  comparisonRecords = [];
+  saveTestRecords();
+  renderTestRecords();
+  addDebugLog('test records cleared');
+}
+
+function formatSearchZoomLabel(zoom) {
+  return Number(zoom) === 5 ? '5x Experimental' : `${zoom}x`;
+}
+
+function updatePowerSaveUi() {
+  if (vPowerSave) vPowerSave.textContent = powerSaveEnabled ? 'ON' : 'OFF';
+  if (vDebugToggle) vDebugToggle.textContent = debugLogEnabled ? 'ON' : 'OFF';
+  if (vRoiToggle) vRoiToggle.textContent = roiPanelEnabled ? 'ON' : 'OFF';
+  if (vHaptic) vHaptic.textContent = hapticEnabled ? 'ON' : 'OFF';
+  if (vHapticSupported) vHapticSupported.textContent = hapticSupported ? 'YES' : 'NO';
+  if (vSound) vSound.textContent = soundEnabled ? 'ON' : 'OFF';
+  if (vSoundReady) vSoundReady.textContent = soundReady ? 'YES' : 'NO';
+  if (vSearchZoom) vSearchZoom.textContent = formatSearchZoomLabel(searchZoom);
+  if (vVcamInterval) vVcamInterval.textContent = `every ${secondPassEveryN}f`;
+  if (powerSaveToggle) powerSaveToggle.checked = powerSaveEnabled;
+  if (debugToggle) debugToggle.checked = debugLogEnabled;
+  if (roiPanelToggle) roiPanelToggle.checked = roiPanelEnabled;
+  if (hapticToggle) hapticToggle.checked = hapticEnabled;
+  if (soundToggle) soundToggle.checked = soundEnabled;
+  if (searchZoomSelect) searchZoomSelect.value = String(searchZoom);
+  if (vcamPanel) vcamPanel.classList.toggle('roi-preview-off', !roiPanelEnabled);
+  if (debugLogEnabled) renderDebugLog();
+  else if (debugLogEl) debugLogEl.textContent = '';
+}
+
+function setPowerSave(enabled) {
+  const wasEnabled = powerSaveEnabled;
+  powerSaveEnabled = !!enabled;
+  secondPassEveryN = powerSaveEnabled ? 8 : 3;
+  mainFrameSkip = powerSaveEnabled ? 2 : 1;
+  if (powerSaveEnabled) {
+    debugLogEnabled = false;
+    roiPanelEnabled = false;
+  } else {
+    debugLogEnabled = true;
+    roiPanelEnabled = true;
+  }
+  updatePowerSaveUi();
+  if (wasEnabled !== powerSaveEnabled) addDebugLog(powerSaveEnabled ? 'power save enabled' : 'power save disabled');
+  addDebugLog(`VCam interval changed to ${secondPassEveryN} frames`);
+  addDebugLog(debugLogEnabled ? 'debug panel enabled' : 'debug panel disabled');
+  addDebugLog(roiPanelEnabled ? 'ROI panel shown' : 'ROI panel hidden');
+}
+
+function setDebugLogEnabled(enabled) {
+  debugLogEnabled = !!enabled;
+  updatePowerSaveUi();
+  addDebugLog(debugLogEnabled ? 'debug panel enabled' : 'debug panel disabled');
+}
+
+function setRoiPanelEnabled(enabled) {
+  roiPanelEnabled = !!enabled;
+  updatePowerSaveUi();
+  addDebugLog(roiPanelEnabled ? 'ROI panel shown' : 'ROI panel hidden');
+}
+
+function setHapticEnabled(enabled) {
+  hapticEnabled = !!enabled;
+  updatePowerSaveUi();
+  addDebugLog(hapticEnabled ? 'haptic alert enabled' : 'haptic alert disabled');
+  if (hapticEnabled && !hapticSupported) addDebugLog('warning: Haptic ON unsupported', 'warn');
+}
+
+function setSoundEnabled(enabled) {
+  soundEnabled = !!enabled;
+  updatePowerSaveUi();
+  addDebugLog(soundEnabled ? 'sound alert enabled' : 'sound alert disabled');
+}
+
+function getAudioContextCtor() {
+  return window.AudioContext || window.webkitAudioContext || null;
+}
+
+async function unlockSoundAlert() {
+  if (!soundEnabled) {
+    addDebugLog('sound alert unlock skipped, sound disabled');
+    return false;
+  }
+  const AudioContextCtor = getAudioContextCtor();
+  if (!AudioContextCtor) {
+    addDebugLog('warning: Web Audio unsupported', 'warn');
+    soundReady = false;
+    updatePowerSaveUi();
+    return false;
+  }
+  try {
+    if (!soundCtx) soundCtx = new AudioContextCtor();
+    if (soundCtx.state === 'suspended' || soundCtx.state === 'interrupted') await soundCtx.resume();
+    const gain = soundCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, soundCtx.currentTime);
+    gain.connect(soundCtx.destination);
+    const osc = soundCtx.createOscillator();
+    osc.frequency.setValueAtTime(880, soundCtx.currentTime);
+    osc.connect(gain);
+    osc.start();
+    osc.stop(soundCtx.currentTime + 0.015);
+    soundReady = soundCtx.state === 'running';
+    updatePowerSaveUi();
+    addDebugLog(soundReady ? 'sound alert unlocked' : 'warning: sound alert not ready', soundReady ? 'info' : 'warn');
+    return soundReady;
+  } catch (e) {
+    soundReady = false;
+    updatePowerSaveUi();
+    addDebugLog(`warning: sound unlock failed: ${e.message}`, 'warn');
+    return false;
+  }
+}
+
+async function triggerSoundAlert(source = 'confirmed') {
+  if (!soundEnabled) return;
+  try {
+    soundReady = !!soundCtx && soundCtx.state === 'running';
+    updatePowerSaveUi();
+    if (!soundCtx || soundCtx.state !== 'running') {
+      const ok = await unlockSoundAlert();
+      if (!ok) {
+        addDebugLog('warning: sound alert blocked until user taps Start', 'warn');
+        return;
+      }
+    }
+
+    const now = soundCtx.currentTime;
+    const gain = soundCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.18, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+    gain.connect(soundCtx.destination);
+
+    const osc = soundCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1046.5, now);
+    osc.frequency.setValueAtTime(1318.5, now + 0.16);
+    osc.connect(gain);
+    osc.start(now);
+    osc.stop(now + 0.34);
+    addDebugLog(source === 'test' ? 'sound test triggered' : 'sound alert triggered');
+  } catch (e) {
+    addDebugLog(`warning: sound alert failed: ${e.message}`, 'warn');
+  }
+}
+
+function setSearchZoom(value) {
+  const nextZoom = validateSearchZoom(value);
+  if (nextZoom === searchZoom) {
+    updatePowerSaveUi();
+    return;
+  }
+  searchZoom = nextZoom;
+  resetDisplayStability();
+  updatePowerSaveUi();
+  addDebugLog(searchZoom === 5 ? 'Search Zoom changed to 5x Experimental' : `Search Zoom changed to ${searchZoom}x`);
+  if (searchZoom === 5) {
+    addDebugLog('warning: 5x Search Zoom is experimental and has very narrow field of view', 'warn');
+  }
+}
+
+function triggerHapticAlert() {
+  if (!hapticEnabled) return;
+  if (!hapticSupported) {
+    addDebugLog('warning: vibration unsupported', 'warn');
+    return;
+  }
+  try {
+    navigator.vibrate([80, 60, 80]);
+    addDebugLog('haptic alert triggered');
+  } catch (e) {
+    addDebugLog(`warning: vibration unsupported: ${e.message}`, 'warn');
+  }
+}
+
+function setStateBanner(state) {
+  const previousState = lastRobotState;
+  robotState = state;
+  stateBanner.textContent = state;
+  stateBanner.style.borderColor = state === 'CONFIRMED_POOP'
+    ? 'rgba(80,220,120,0.75)'
+    : state === 'CANDIDATE_FOUND'
+      ? 'rgba(255,204,64,0.7)'
+      : 'rgba(85,187,255,0.4)';
+  stateBanner.style.color = state === 'CONFIRMED_POOP'
+    ? '#9cffb4'
+    : state === 'CANDIDATE_FOUND'
+      ? '#ffe28a'
+      : '#dff6ff';
+  if (previousState !== 'CONFIRMED_POOP' && state === 'CONFIRMED_POOP') {
+    triggerHapticAlert();
+    triggerSoundAlert();
+  }
+  lastRobotState = state;
+}
+
+function updateRobotState(candidate, displayBoxes, guidance) {
+  if (typeof robotState !== 'string') addDebugLog('warning: robotState invalid', 'warn');
+  let nextState = 'SEARCHING';
+  if (virtualCamera.result === 'CONFIRMED') nextState = 'CONFIRMED_POOP';
+  else if (displayBoxes.length && smoothedConf >= MAIN_CONFIRM_THRESH) nextState = 'TARGET_LOCKED';
+  else if (candidate) nextState = 'CANDIDATE_FOUND';
+  else if (displayBoxes.length && guidance) nextState = guidance.action.includes('Turn') ? 'ALIGNING' : 'APPROACHING';
+  else if (tracks.length) nextState = 'LOST_TARGET';
+
+  setStateBanner(nextState);
+  return nextState;
+}
+
+function applyGuidanceHysteresis(action, offset) {
+  const turnExit = ALIGN_THRESH * 0.65;
+  let nextAction = action;
+
+  if (lastGuidanceAction === 'Turn Left' && offset < -turnExit) nextAction = 'Turn Left';
+  if (lastGuidanceAction === 'Turn Right' && offset > turnExit) nextAction = 'Turn Right';
+  if (nextAction !== lastGuidanceAction) {
+    guidanceStableFrames++;
+    if (guidanceStableFrames < 2) nextAction = lastGuidanceAction;
+    else {
+      lastGuidanceAction = nextAction;
+      guidanceStableFrames = 0;
+    }
+  } else {
+    guidanceStableFrames = 0;
+  }
+
+  if (Math.abs(offset) < turnExit && action === 'Move Forward') lastGuidanceAction = 'Move Forward';
+  return lastGuidanceAction;
+}
+
+
+// ─── Display transform / box smoothing ───────────────────────────────────────
+function getDisplayTransform() {
+  const rect = video.getBoundingClientRect();
+  const displayWidth = rect.width || 320;
+  const displayHeight = rect.height || 240;
+  const videoWidth = video.videoWidth || 320;
+  const videoHeight = video.videoHeight || 240;
+  const dpr = window.devicePixelRatio || 1;
+
+  const scale = Math.max(displayWidth / videoWidth, displayHeight / videoHeight);
+  const scaledW = videoWidth * scale;
+  const scaledH = videoHeight * scale;
+  const offsetX = (scaledW - displayWidth) / 2;
+  const offsetY = (scaledH - displayHeight) / 2;
+
+  return { displayWidth, displayHeight, videoWidth, videoHeight, scale, offsetX, offsetY, dpr };
+}
+
+function mapVideoToDisplay(x, y, xf) {
+  return [
+    x * xf.scale - xf.offsetX,
+    y * xf.scale - xf.offsetY,
+  ];
+}
+
+function rectIou(a, b) {
+  const ax2 = a.x + a.w, ay2 = a.y + a.h;
+  const bx2 = b.x + b.w, by2 = b.y + b.h;
+  const ix1 = Math.max(a.x, b.x), iy1 = Math.max(a.y, b.y);
+  const ix2 = Math.min(ax2, bx2), iy2 = Math.min(ay2, by2);
+  const inter = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
+  if (!inter) return 0;
+  return inter / (a.w * a.h + b.w * b.h - inter);
+}
+
+function averageBoxes(boxes) {
+  let x = 0, y = 0, w = 0, h = 0, conf = 0;
+  for (const b of boxes) {
+    x += b.x; y += b.y; w += b.w; h += b.h; conf += b.conf;
+  }
+  const n = boxes.length || 1;
+  return { x: x/n, y: y/n, w: w/n, h: h/n, conf: conf/n };
+}
+
+function getApproachGuidance(displayBoxes, xf) {
+  if (!displayBoxes.length) return null;
+
+  let primary = null;
+  let bestScore = -Infinity;
+  for (const box of displayBoxes) {
+    const areaRatio = (box.w * box.h) / (xf.videoWidth * xf.videoHeight);
+    const areaScore = Math.min(areaRatio / CLOSE_AREA_RATIO, 1);
+    const lowerScore = Math.min((box.y + box.h / 2) / xf.videoHeight, 1);
+    const score = box.conf * 0.6 + areaScore * 0.3 + lowerScore * 0.1;
+    if (score > bestScore) {
+      bestScore = score;
+      primary = box;
+    }
+  }
+
+  const [targetX, targetY] = mapVideoToDisplay(primary.x + primary.w / 2, primary.y + primary.h / 2, xf);
+  const originX = xf.displayWidth / 2;
+  const originY = xf.displayHeight * 0.96;
+  const offset = (targetX - originX) / (xf.displayWidth / 2);
+  const vertical = targetY / xf.displayHeight;
+  const areaRatio = (primary.w * primary.h) / (xf.videoWidth * xf.videoHeight);
+  const distance = areaRatio >= CLOSE_AREA_RATIO ? 'Close' : areaRatio >= MED_AREA_RATIO ? 'Medium' : 'Far';
+
+  let action = 'Move Forward';
+  if (offset < -ALIGN_THRESH) action = 'Turn Left';
+  else if (offset > ALIGN_THRESH) action = 'Turn Right';
+  else if (distance === 'Close') action = 'Ready to Clean';
+  action = applyGuidanceHysteresis(action, offset);
+
+  return {
+    primary,
+    targetX,
+    targetY,
+    originX,
+    originY,
+    offset,
+    vertical,
+    offsetPct: Math.round(Math.abs(offset) * 100),
+    alignmentPct: Math.round(Math.max(0, 1 - Math.abs(offset)) * 100),
+    verticalPct: Math.round(vertical * 100),
+    distance,
+    action,
+  };
+}
+
+function updateDisplayStability(dets) {
+  const now = performance.now();
+  for (const track of tracks) track.matched = false;
+
+  for (const det of dets.slice(0, MAX_TRACKS)) {
+    let bestTrack = null;
+    let bestScore = 0;
+
+    for (const track of tracks) {
+      if (track.matched) continue;
+      const anchor = track.lastSmoothBox || track;
+      const score = rectIou(det, anchor);
+      if (score > bestScore) {
+        bestScore = score;
+        bestTrack = track;
+      }
+    }
+
+    const track = bestScore >= TRACK_IOU_MATCH ? bestTrack : {
+      id: nextTrackId++,
+      x: det.x,
+      y: det.y,
+      w: det.w,
+      h: det.h,
+      conf: det.conf,
+      smoothedConf: 0,
+      visible: false,
+      missingFrames: 0,
+      history: [],
+      lastSmoothBox: null,
+      lastSmoothBoxTs: 0,
+      matched: false,
+    };
+
+    if (!bestTrack || bestScore < TRACK_IOU_MATCH) tracks.push(track);
+
+    track.matched = true;
+    track.missingFrames = 0;
+    track.x = det.x; track.y = det.y; track.w = det.w; track.h = det.h; track.conf = det.conf;
+    track.smoothedConf = (1 - EMA_ALPHA) * track.smoothedConf + EMA_ALPHA * det.conf;
+
+    if (!track.visible && track.smoothedConf >= APPEAR_THRESH) track.visible = true;
+    if ( track.visible && track.smoothedConf <  DISAPPEAR_THRESH) track.visible = false;
+
+    if (track.visible) {
+      track.history.push({ x: det.x, y: det.y, w: det.w, h: det.h, conf: det.conf });
+      if (track.history.length > BOX_SMOOTH_N) track.history.shift();
+      track.lastSmoothBox = averageBoxes(track.history);
+      track.lastSmoothBoxTs = now;
+    } else if (track.smoothedConf < DISAPPEAR_THRESH) {
+      track.history = [];
+      track.lastSmoothBox = null;
+    }
+  }
+
+  for (const track of tracks) {
+    if (track.matched) continue;
+    track.missingFrames++;
+    track.smoothedConf = (1 - EMA_ALPHA) * track.smoothedConf;
+    if (track.smoothedConf < DISAPPEAR_THRESH) track.visible = false;
+  }
+
+  tracks = tracks
+    .filter(track => track.missingFrames < LOST_FRAMES || (track.lastSmoothBox && now - track.lastSmoothBoxTs <= MEMORY_MS))
+    .sort((a, b) => b.smoothedConf - a.smoothedConf)
+    .slice(0, MAX_TRACKS);
+
+  const displayBoxes = tracks
+    .map(track => {
+      const memoryActive = track.lastSmoothBox && (now - track.lastSmoothBoxTs <= MEMORY_MS);
+      const box = track.history.length ? averageBoxes(track.history) : (memoryActive ? track.lastSmoothBox : null);
+      return box ? { ...box, conf: track.smoothedConf, id: track.id, locked: track.visible } : null;
+    })
+    .filter(Boolean);
+
+  smoothedConf = displayBoxes.length ? Math.max(...displayBoxes.map(box => box.conf)) : 0;
+  visible = displayBoxes.some(box => box.locked);
+
+  return { displayBoxes };
+}
+
+function resetDisplayStability() {
+  smoothedConf = 0;
+  visible = false;
+  tracks = [];
+  nextTrackId = 1;
+  candidateState = {
+    frames: 0,
+    history: [],
+    lastBox: null,
+    smoothedBox: null,
+    lastSeenTs: 0,
+  };
+  robotState = 'SEARCHING';
+  lastRobotState = 'SEARCHING';
+  inferFrameIndex = 0;
+  animationFrameIndex = 0;
+  lastMainInferenceMs = null;
+  topRawConf = 0;
+  topRawAreaPercent = null;
+  lastTopRawBucket = '';
+  lastSearchZoomPreviewFrame = -1;
+  lastSearchZoomPreviewThrottleLogAt = 0;
+  lastSearchZoomCropActiveLogAt = 0;
+  lastSearchZoomMappingLogAt = 0;
+  if (vTopRaw) vTopRaw.textContent = '0%';
+  if (vTopArea) vTopArea.textContent = '—';
+  lastGuidanceAction = 'Move Forward';
+  guidanceStableFrames = 0;
+  virtualCamera = {
+    mode: 'OFF',
+    result: 'NO ROI',
+    mainResult: 'SEARCHING',
+    secondRawConf: 0,
+    secondSmoothedConf: 0,
+    confirmedFrames: 0,
+    roi: null,
+    aiZoom: null,
+    lastAiZoomBucket: '',
+    lastInferenceMs: null,
+  };
+  drawVirtualCameraPanel(null);
+  updateVirtualCameraUi();
+}
+
+// ─── Draw ─────────────────────────────────────────────────────────────────────
+function draw(dets, displayBoxes, xf, guidance, candidate) {
+  const { displayWidth: dw, displayHeight: dh, dpr } = xf;
+
+  canvas.width  = Math.round(dw * dpr);
+  canvas.height = Math.round(dh * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, dw, dh);
+
+  const lw = Math.max(2, dw / 180);
+  const fs = Math.max(13, dw / 26);
+
+  function toDisplayRect(d) {
+    const [x, y] = mapVideoToDisplay(d.x, d.y, xf);
+    return {
+      x,
+      y,
+      w: d.w * xf.scale,
+      h: d.h * xf.scale,
+      conf: d.conf
+    };
+  }
+
+  // Raw detections only for debugging. Keeping them visible causes flicker.
+  if (DEBUG_RAW_BOXES) {
+    for (const d of dets) {
+      const r = toDisplayRect(d);
+      ctx.strokeStyle = 'rgba(255,80,80,0.35)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+    }
+  }
+
+  if (guidance) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(85,187,255,0.85)';
+    ctx.fillStyle = 'rgba(85,187,255,0.95)';
+    ctx.lineWidth = Math.max(2, dw / 170);
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.moveTo(guidance.originX, guidance.originY);
+    ctx.lineTo(guidance.targetX, guidance.targetY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(guidance.originX, guidance.originY, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(guidance.targetX, guidance.targetY, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    const direction = guidance.offset < 0 ? 'Left' : guidance.offset > 0 ? 'Right' : 'Center';
+    const lines = [
+      `Guide: ${guidance.action}`,
+      `Target #${guidance.primary.id} · ${guidance.distance}`,
+      `Offset ${direction} ${guidance.offsetPct}% · Align ${guidance.alignmentPct}%`,
+      `Vertical ${guidance.verticalPct}%`,
+    ];
+    const panelFs = Math.max(11, Math.min(14, dw / 38));
+    const panelPad = 7;
+    ctx.font = `600 ${panelFs}px sans-serif`;
+    const panelW = Math.max(...lines.map(line => ctx.measureText(line).width)) + panelPad * 2;
+    const panelH = lines.length * (panelFs + 4) + panelPad * 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.68)';
+    ctx.fillRect(8, 8, panelW, panelH);
+    ctx.fillStyle = '#dff6ff';
+    lines.forEach((line, i) => ctx.fillText(line, 8 + panelPad, 8 + panelPad + panelFs + i * (panelFs + 4)));
+    ctx.restore();
+  }
+
+  if (candidate && isValidBox(candidate)) {
+    const r = toDisplayRect(candidate);
+    ctx.strokeStyle = virtualCamera.result === 'CONFIRMED' ? '#50dc78' : '#ffcc40';
+    ctx.lineWidth = Math.max(2, lw * 0.9);
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+  }
+
+  for (const displayBox of displayBoxes) {
+    const r = toDisplayRect(displayBox);
+    const locked = displayBox.locked;
+    const primary = guidance && displayBox.id === guidance.primary.id;
+    const color = virtualCamera.result === 'CONFIRMED' && primary ? '#50dc78' : primary ? '#55bbff' : locked ? '#ff3333' : 'rgba(255,170,0,0.65)';
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = primary ? lw * 1.25 : locked ? lw : Math.max(1.5, lw * 0.75);
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+
+    const label = `💩 #${displayBox.id} ${(displayBox.conf * 100).toFixed(0)}%`;
+    ctx.font = `bold ${fs}px sans-serif`;
+    const tw  = ctx.measureText(label).width;
+    const pad = 4;
+    const lx  = r.x;
+    const ly  = r.y - fs - pad * 2 > 0 ? r.y - fs - pad * 2 : r.y + 2;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(lx, ly, tw + pad * 2, fs + pad * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, lx + pad, ly + fs + pad * 0.6);
+  }
+}
+
+// ─── Inference loop ───────────────────────────────────────────────────────────
+let running = false, frameCount = 0, lastTs = performance.now(), inferenceRunId = 0;
+
+let smoothedConf = 0;
+let visible = false;
+let tracks = [];
+let nextTrackId = 1;
+let candidateState = {
+  frames: 0,
+  history: [],
+  lastBox: null,
+  smoothedBox: null,
+  lastSeenTs: 0,
+};
+let robotState = 'SEARCHING';
+let debugLogs = [];
+let lastDebugMessage = '';
+let lastDebugAt = 0;
+let inferFrameIndex = 0;
+let animationFrameIndex = 0;
+let currentFps = 0;
+let lastMainInferenceMs = null;
+let powerSaveEnabled = true;
+let debugLogEnabled = false;
+let roiPanelEnabled = false;
+let hapticEnabled = true;
+let hapticSupported = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+let soundEnabled = true;
+let soundReady = false;
+let soundCtx = null;
+let searchZoom = 2;
+let secondPassEveryN = 8;
+let mainFrameSkip = 2;
+let topRawConf = 0;
+let topRawAreaPercent = null;
+let lastTopRawBucket = '';
+let lastSearchZoomPreviewFrame = -1;
+let lastSearchZoomPreviewThrottleLogAt = 0;
+let lastSearchZoomViewUpdatedLogAt = 0;
+let lastSearchZoomCropActiveLogAt = 0;
+let lastSearchZoomMappingLogAt = 0;
+let lastGuidanceAction = 'Move Forward';
+let guidanceStableFrames = 0;
+let lastRobotState = 'SEARCHING';
+let comparisonRecords = [];
+let virtualCamera = {
+  mode: 'OFF',
+  result: 'NO ROI',
+  mainResult: 'SEARCHING',
+  secondRawConf: 0,
+  secondSmoothedConf: 0,
+  confirmedFrames: 0,
+  roi: null,
+  aiZoom: null,
+  lastAiZoomBucket: '',
+  lastInferenceMs: null,
+};
+
+function stopInference() {
+  running = false;
+  inferenceRunId++;
+}
+
+function startInference() {
+  running = true;
+  inferLoop(++inferenceRunId);
+}
+
+async function inferLoop(runId) {
+  if (!running || runId !== inferenceRunId || !session) return;
+  animationFrameIndex++;
+  if (powerSaveEnabled && mainFrameSkip > 1 && animationFrameIndex % mainFrameSkip !== 0) {
+    requestAnimationFrame(() => inferLoop(runId));
+    return;
+  }
+
+  const activeSession = session;
+  const t = preprocess();
+  const prep = { ...lastPreprocess };
+  let out;
+  try {
+    const mainInferenceStartedAt = performance.now();
+    out = await activeSession.run({ images: t });
+    lastMainInferenceMs = performance.now() - mainInferenceStartedAt;
+  } catch (e) {
+    if (!running || runId !== inferenceRunId) return;
+    throw e;
+  }
+
+  if (!running || runId !== inferenceRunId || activeSession !== session) return;
+  const outTensor = out[Object.keys(out)[0]];
+
+  updateTopRawDebug(outTensor, prep);
+  const dets = postprocess(outTensor, prep);
+  const xf = getDisplayTransform();
+  inferFrameIndex++;
+  const rawCandidate = findBestCandidate(dets);
+  const candidate = updateCandidateStability(rawCandidate);
+  const { displayBoxes } = updateDisplayStability(dets);
+  const guidance = getApproachGuidance(displayBoxes, xf);
+
+  let roi = null;
+  let secondResult;
+  if (candidate) {
+    roi = createRoiFromCandidate(candidate);
+    if (roi && validateRoi(roi)) {
+      drawVirtualCameraPanel(roi);
+      if (inferFrameIndex % secondPassEveryN === 0) {
+        secondResult = await runVirtualCameraInference(roi);
+        if (!running || runId !== inferenceRunId || activeSession !== session) return;
+      }
+    } else {
+      secondResult = null;
+      drawVirtualCameraPanel(null);
+    }
+  } else {
+    addDebugLog('warning: no ROI available', 'warn');
+    drawVirtualCameraPanel(null);
+    secondResult = null;
+  }
+
+  updateVirtualCameraState(candidate, roi, secondResult, currentFps);
+  updateVirtualCameraUi();
+  updateRobotState(candidate, displayBoxes, guidance);
+  draw(dets, displayBoxes, xf, guidance, candidate);
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastTs >= 1000) {
+    const fps = Math.round(frameCount * 1000 / (now - lastTs));
+    currentFps = fps;
+    vFps.textContent = fps;
+    bFps.className = `badge ${fps >= 15 ? 'good' : fps >= 7 ? 'warn' : 'err'}`;
+    frameCount = 0; lastTs = now;
+  }
+
+  if (robotState === 'CONFIRMED_POOP') {
+    if (!Number.isFinite(virtualCamera.secondSmoothedConf)) addDebugLog('warning: second smoothed confidence invalid', 'warn');
+    if (!displayBoxes.length) addDebugLog('confirmed by VCam even without main display box');
+    addDebugLog('confirmed display updated correctly');
+    const second = Number.isFinite(virtualCamera.secondSmoothedConf) ? virtualCamera.secondSmoothedConf : 0;
+    detCount.textContent = `💩 CONFIRMED_POOP · VCam confirmed · Second ${(second * 100).toFixed(0)}%`;
+  } else {
+    detCount.textContent = displayBoxes.length
+      ? `💩 ${robotState} · 目標 ${displayBoxes.length} 個 · 最高 ${(smoothedConf * 100).toFixed(0)}%${guidance ? ` · ${guidance.action}` : ''}`
+      : `${robotState} · 未偵測到便便`;
+  }
+
+  requestAnimationFrame(() => inferLoop(runId));
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function setMsg(t) { msgText.textContent = t; }
+
+// ─── Model switching ─────────────────────────────────────────────────────────
+async function loadSelectedModel() {
+  if (!running) {
+    currentModelKey = modelSel.value;
+    currentModelUrl = MODELS[currentModelKey].url;
+    CANDIDATE_THRESH = MODELS[currentModelKey].threshold;
+    CONF_THRESH = MODELS[currentModelKey].threshold;
+    updateActiveModelUi();
+    addDebugLog(`model profile selected: ${MODELS[currentModelKey].label}`);
+    return;
+  }
+
+  stopInference();
+  resetDisplayStability();
+  modelSel.disabled = true;
+  setMsg(`切換模型到 ${MODELS[modelSel.value].label}...`);
+
+  currentModelKey = modelSel.value;
+  currentModelUrl = MODELS[currentModelKey].url;
+  CANDIDATE_THRESH = MODELS[currentModelKey].threshold;
+  CONF_THRESH = MODELS[currentModelKey].threshold;
+  updateActiveModelUi();
+  addDebugLog(`model switch threshold ${(CANDIDATE_THRESH * 100).toFixed(0)}%`);
+
+  try {
+    if (session && typeof session.release === 'function') {
+      await session.release();
+    }
+  } catch (e) {
+    console.warn('[ModelSwitch] session release warning:', e);
+  }
+
+  session = null;
+
+  try {
+    await initModel();
+    overlayEl.style.display = 'none';
+    detCount.style.display = 'block';
+    startInference();
+    console.log('[ModelSwitch]', currentModelKey, currentModelUrl);
+  } catch (e) {
+    console.error(e);
+    setMsg(`❌ 模型切換失敗: ${e.message}`);
+    overlayEl.style.display = 'flex';
+    detCount.style.display = 'none';
+    vModel.textContent = 'error';
+    bModel.className = 'badge err';
+    startBtn.disabled = false;
+    startBtn.textContent = '重試';
+  } finally {
+    modelSel.disabled = false;
+  }
+}
+
+modelSel.addEventListener('change', loadSelectedModel);
+
+if (recordTestBtn) {
+  recordTestBtn.addEventListener('click', recordTestSnapshot);
+} else {
+  addDebugLog('warning: Record Sample button missing', 'warn');
+}
+
+if (exportTestBtn) {
+  exportTestBtn.addEventListener('click', exportTestRecordsCsv);
+} else {
+  addDebugLog('warning: Download CSV button missing', 'warn');
+}
+
+if (clearTestBtn) {
+  clearTestBtn.addEventListener('click', clearTestRecords);
+} else {
+  addDebugLog('warning: Clear Records button missing', 'warn');
+}
+
+if (powerSaveToggle) {
+  powerSaveToggle.addEventListener('change', () => setPowerSave(powerSaveToggle.checked));
+} else {
+  addDebugLog('warning: Power Save toggle missing', 'warn');
+}
+
+if (debugToggle) {
+  debugToggle.addEventListener('change', () => setDebugLogEnabled(debugToggle.checked));
+} else {
+  addDebugLog('warning: Debug toggle missing', 'warn');
+}
+
+if (roiPanelToggle) {
+  roiPanelToggle.addEventListener('change', () => setRoiPanelEnabled(roiPanelToggle.checked));
+} else {
+  addDebugLog('warning: ROI Panel toggle missing', 'warn');
+}
+
+if (hapticToggle) {
+  hapticToggle.addEventListener('change', () => setHapticEnabled(hapticToggle.checked));
+} else {
+  addDebugLog('warning: Haptic toggle missing', 'warn');
+}
+
+if (soundToggle) {
+  soundToggle.addEventListener('change', () => setSoundEnabled(soundToggle.checked));
+} else {
+  addDebugLog('warning: Sound toggle missing', 'warn');
+}
+
+if (testSoundBtn) {
+  testSoundBtn.addEventListener('click', async () => {
+    addDebugLog('sound test requested');
+    await unlockSoundAlert();
+    await triggerSoundAlert('test');
+  });
+} else {
+  addDebugLog('warning: Test Sound button missing', 'warn');
+}
+
+if (searchZoomSelect) {
+  searchZoomSelect.addEventListener('change', () => setSearchZoom(searchZoomSelect.value));
+} else {
+  addDebugLog('warning: Search Zoom selector missing', 'warn');
+}
+
+if (hapticEnabled && !hapticSupported) addDebugLog('warning: Haptic ON unsupported', 'warn');
+if (powerSaveEnabled) addDebugLog('Power Save default enabled');
+addDebugLog('Search Zoom changed to 2x');
+updateActiveModelUi();
+loadTestRecords();
+updatePowerSaveUi();
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+startBtn.addEventListener('click', async () => {
+  startBtn.disabled = true;
+  startBtn.textContent = '載入中…';
+  try {
+    await unlockSoundAlert();
+    currentModelKey = modelSel.value;
+    currentModelUrl = MODELS[currentModelKey].url;
+    CANDIDATE_THRESH = MODELS[currentModelKey].threshold;
+    CONF_THRESH = MODELS[currentModelKey].threshold;
+    updateActiveModelUi();
+    await startCamera();
+    await initModel();
+    overlayEl.style.display = 'none';
+    detCount.style.display  = 'block';
+    resetDisplayStability();
+    startInference();
+  } catch (e) {
+    console.error(e);
+    setMsg(`❌ ${e.message}`);
+    vModel.textContent = 'error';
+    bModel.className = 'badge err';
+    startBtn.disabled = false;
+    startBtn.textContent = '重試';
+  }
+});
+</script>
+</body>
+</html>
